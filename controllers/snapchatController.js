@@ -1,4 +1,5 @@
 const snapchatService = require('../services/snapchatService');
+const snapchatPublicProfileService = require('../services/snapchatPublicProfileService');
 const User = require('../models/User');
 
 exports.getAuthURL = async (req, res) => {
@@ -27,7 +28,7 @@ exports.getAuthURL = async (req, res) => {
 exports.handleCallback = async (req, res) => {
   try {
     console.log('========================================');
-    console.log('🔗 SNAPCHAT OAUTH CALLBACK RECEIVED');
+    console.log('🔗 SNAPCHAT PUBLIC PROFILE OAUTH CALLBACK');
     console.log('========================================');
 
     const { code, state } = req.query;
@@ -46,7 +47,7 @@ exports.handleCallback = async (req, res) => {
     console.log('User ID from state:', userId);
 
     console.log('🔄 Exchanging code for tokens...');
-    const tokens = await snapchatService.exchangeCodeForToken(code);
+    const tokens = await snapchatPublicProfileService.exchangeCodeForToken(code);
     console.log('✅ Tokens received:', {
       hasAccessToken: !!tokens.accessToken,
       hasRefreshToken: !!tokens.refreshToken,
@@ -55,77 +56,23 @@ exports.handleCallback = async (req, res) => {
 
     const expiresAt = new Date(Date.now() + tokens.expiresIn * 1000);
 
-    console.log('📋 Fetching organizations...');
-    const organizations = await snapchatService.getOrganizations(tokens.accessToken, userId);
-    console.log('Organizations response:', JSON.stringify(organizations, null, 2));
-    
-    // Prefer ENTERPRISE organizations over PROVISIONAL (more permissions)
-    let selectedOrg = organizations.find(org => org.organization?.type === 'ENTERPRISE');
-    if (!selectedOrg) {
-      selectedOrg = organizations[0]; // Fallback to first org
-    }
-    
-    const organizationId = selectedOrg?.organization?.id;
-    const organizationName = selectedOrg?.organization?.name || 'My Organization';
-    const organizationType = selectedOrg?.organization?.type;
-    
-    console.log('Selected Organization:', {
-      id: organizationId,
-      name: organizationName,
-      type: organizationType,
-    });
-
-    let adAccounts = [];
-    let accountId = null;
-
-    if (organizationId) {
-      console.log('📋 Fetching ad accounts for organization:', organizationId);
-      adAccounts = await snapchatService.getAdAccounts(organizationId, tokens.accessToken, userId);
-      console.log('Ad accounts response:', JSON.stringify(adAccounts, null, 2));
-
-      // Extract account ID with better error handling
-      if (adAccounts && adAccounts.length > 0) {
-        // Try different possible structures
-        accountId = adAccounts[0]?.adaccount?.id || adAccounts[0]?.id || adAccounts[0]?.ad_account?.id;
-        console.log('✅ Found existing account ID:', accountId);
-        console.log('First ad account structure:', JSON.stringify(adAccounts[0], null, 2));
-      } else {
-        console.log('⚠️  No ad accounts found - Creating new one automatically...');
-        
-        // AUTO-CREATE AD ACCOUNT
-        try {
-          const newAdAccount = await snapchatService.createAdAccount(
-            organizationId,
-            tokens.accessToken,
-            `${organizationName} - Creator OS`,
-            userId
-          );
-          
-          // Extract account ID from newly created account
-          accountId = newAdAccount?.adaccount?.id || newAdAccount?.id || newAdAccount?.ad_account?.id;
-          
-          if (accountId) {
-            console.log('✅ Successfully created new ad account with ID:', accountId);
-            console.log('New ad account structure:', JSON.stringify(newAdAccount, null, 2));
-          } else {
-            console.log('⚠️  Ad account creation returned no ID:', JSON.stringify(newAdAccount, null, 2));
-          }
-        } catch (createError) {
-          console.error('❌ Failed to auto-create ad account:', createError.message);
-          console.error('Error details:', createError);
-          // Don't throw - let user connect without ad account, they can create manually later
-          console.log('⚠️  User connected but without ad account. They can create one manually in Snapchat Business Manager.');
-        }
-      }
-    } else {
-      console.log('⚠️  No organization found, cannot fetch/create ad accounts');
+    console.log('📋 Fetching Public Profile info...');
+    let publicProfile = null;
+    try {
+      publicProfile = await snapchatPublicProfileService.getPublicProfile(tokens.accessToken, userId);
+      console.log('✅ Public Profile info:', {
+        id: publicProfile?.me?.id,
+        displayName: publicProfile?.me?.display_name,
+        bitmoji: publicProfile?.me?.bitmoji?.avatar,
+      });
+    } catch (profileError) {
+      console.log('⚠️  Could not fetch public profile (not critical):', profileError.message);
     }
 
     console.log('💾 Saving to database...');
     console.log('Data to save:', {
       isConnected: true,
-      organizationId,
-      accountId,
+      profileId: publicProfile?.me?.id,
       hasAccessToken: !!tokens.accessToken,
       hasRefreshToken: !!tokens.refreshToken,
     });
@@ -135,24 +82,21 @@ exports.handleCallback = async (req, res) => {
       'snapchatAccount.accessToken': tokens.accessToken,
       'snapchatAccount.refreshToken': tokens.refreshToken,
       'snapchatAccount.expiresAt': expiresAt,
-      'snapchatAccount.organizationId': organizationId,
-      'snapchatAccount.accountId': accountId,
+      'snapchatAccount.accountId': publicProfile?.me?.id || 'public-profile',
+      'snapchatAccount.organizationId': null, // Not needed for Public Profile
     });
 
     console.log('✅ Database updated successfully');
     console.log('========================================');
-    console.log('✅ SNAPCHAT CONNECTION COMPLETED');
+    console.log('✅ SNAPCHAT PUBLIC PROFILE CONNECTED');
     console.log('========================================');
 
     res.json({
       success: true,
-      message: 'Snapchat account connected successfully',
-      organization: organizations[0]?.organization?.name,
-      accountId: accountId,
-      debug: {
-        hasOrganization: !!organizationId,
-        hasAdAccount: !!accountId,
-        adAccountsCount: adAccounts.length,
+      message: 'Snapchat Public Profile connected successfully',
+      profile: {
+        displayName: publicProfile?.me?.display_name,
+        bitmoji: publicProfile?.me?.bitmoji?.avatar,
       },
     });
   } catch (error) {
@@ -237,7 +181,7 @@ async function ensureValidToken(user) {
     console.log('🔄 Token expired, refreshing...');
     
     try {
-      const tokens = await snapchatService.refreshAccessToken(user.snapchatAccount.refreshToken);
+      const tokens = await snapchatPublicProfileService.refreshAccessToken(user.snapchatAccount.refreshToken);
       
       user.snapchatAccount.accessToken = tokens.accessToken;
       user.snapchatAccount.refreshToken = tokens.refreshToken;

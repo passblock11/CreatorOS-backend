@@ -1,6 +1,6 @@
 const Post = require('../models/Post');
 const User = require('../models/User');
-const snapchatService = require('../services/snapchatService');
+const snapchatPublicProfileService = require('../services/snapchatPublicProfileService');
 const { ensureValidToken } = require('./snapchatController');
 const { body, validationResult } = require('express-validator');
 
@@ -264,62 +264,42 @@ exports.publishPost = async (req, res) => {
       const accessToken = await ensureValidToken(user);
       console.log('✅ Access token obtained:', accessToken ? `${accessToken.substring(0, 20)}...` : 'null');
 
-      let mediaId = null;
-      if (post.mediaUrl) {
-        console.log('📸 Uploading media to Snapchat...');
-        console.log('Media details:', {
-          accountId: user.snapchatAccount.accountId,
-          name: post.title,
-          type: post.mediaType === 'video' ? 'VIDEO' : 'IMAGE',
-          url: post.mediaUrl,
+      if (!post.mediaUrl) {
+        console.log('❌ No media URL - Public Profile posts require media');
+        return res.status(400).json({
+          success: false,
+          message: 'Media (image or video) is required for Snapchat Public Profile posts',
         });
-
-        const media = await snapchatService.uploadMedia(
-          user.snapchatAccount.accountId,
-          accessToken,
-          {
-            name: post.title,
-            type: post.mediaType === 'video' ? 'VIDEO' : 'IMAGE',
-            url: post.mediaUrl,
-          },
-          user._id
-        );
-        
-        // Extract media ID from nested response structure
-        mediaId = media?.media?.id || media?.id;
-        console.log('✅ Media uploaded successfully. Media ID:', mediaId);
-        console.log('Media response structure:', JSON.stringify(media, null, 2));
-      } else {
-        console.log('ℹ️  No media to upload (text-only post)');
       }
 
-      console.log('🎨 Creating Snapchat creative...');
-      console.log('Creative details:', {
-        accountId: user.snapchatAccount.accountId,
-        name: post.title,
-        headline: post.content.substring(0, 34),
-        mediaId: mediaId,
-        brandName: 'Creator OS',
+      console.log('📸 Posting to Snapchat Public Profile...');
+      console.log('Post details:', {
+        title: post.title,
+        content: post.content,
+        mediaType: post.mediaType,
+        mediaUrl: post.mediaUrl,
       });
 
-      const creative = await snapchatService.createCreative(
-        user.snapchatAccount.accountId,
+      const result = await snapchatPublicProfileService.postToPublicProfile(
         accessToken,
         {
-          name: post.title,
-          headline: post.content.substring(0, 34),
-          mediaId: mediaId,
-          brandName: 'Creator OS',
-          callToAction: 'VIEW',
+          title: post.title,
+          headline: post.content?.substring(0, 255) || post.title,
+          mediaUrl: post.mediaUrl,
+          mediaType: post.mediaType || 'image',
         },
         user._id
       );
 
-      console.log('✅ Creative created successfully. Creative ID:', creative.id);
+      console.log('✅ Posted to Public Profile successfully');
+      console.log('Post result:', JSON.stringify(result, null, 2));
+
+      // Extract story/post ID from response
+      const postId = result?.data?.id || result?.id || 'published';
 
       post.status = 'published';
       post.publishedAt = new Date();
-      post.snapchatCreativeId = creative.id;
+      post.snapchatCreativeId = postId;
       await post.save();
       console.log('✅ Post saved as published');
 
@@ -328,20 +308,20 @@ exports.publishPost = async (req, res) => {
       console.log('✅ User usage incremented');
 
       console.log('========================================');
-      console.log('✅ PUBLISH POST COMPLETED SUCCESSFULLY');
+      console.log('✅ PUBLISH TO PUBLIC PROFILE COMPLETED');
+      console.log('Post ID:', postId);
       console.log('========================================');
 
       res.json({
         success: true,
-        message: 'Post published to Snapchat successfully',
+        message: 'Post published to Snapchat Public Profile successfully',
         post,
       });
     } catch (snapError) {
       console.error('========================================');
-      console.error('❌ SNAPCHAT API ERROR:');
+      console.error('❌ SNAPCHAT PUBLIC PROFILE POST ERROR:');
       console.error('Error message:', snapError.message);
       console.error('Error stack:', snapError.stack);
-      console.error('Error response:', snapError.response?.data);
       console.error('========================================');
 
       post.status = 'failed';
