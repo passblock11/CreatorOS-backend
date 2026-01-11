@@ -284,8 +284,11 @@ exports.publishPost = async (req, res) => {
           },
           user._id
         );
-        mediaId = media.id;
+        
+        // Extract media ID from nested response structure
+        mediaId = media?.media?.id || media?.id;
         console.log('✅ Media uploaded successfully. Media ID:', mediaId);
+        console.log('Media response structure:', JSON.stringify(media, null, 2));
       } else {
         console.log('ℹ️  No media to upload (text-only post)');
       }

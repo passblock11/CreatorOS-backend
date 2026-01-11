@@ -258,11 +258,16 @@ class SnapchatService {
           brand_name: creativeData.brandName || 'Creator OS',
           headline: creativeData.headline,
           shareable: true,
-          type: creativeData.type || 'WEB_VIEW',
+          type: 'SNAP_AD',  // Use SNAP_AD for image/video creatives
           top_snap_media_id: creativeData.mediaId,
-          call_to_action: creativeData.callToAction || 'VIEW',
+          call_to_action: creativeData.callToAction || 'WATCH',
         }],
       };
+
+      // Log warning if mediaId is missing
+      if (!creativeData.mediaId) {
+        console.log('⚠️  WARNING: Creating creative without media ID!');
+      }
 
       console.log('🔹 Making API request to:', `/adaccounts/${adAccountId}/creatives`);
       console.log('🔹 Request payload:', JSON.stringify(payload, null, 2));
