@@ -153,55 +153,93 @@ class SnapchatService {
   async createAdAccount(organizationId, accessToken, accountName, userId) {
     const startTime = Date.now();
     
-    try {
-      console.log('🆕 Creating new Ad Account:', {
-        organizationId,
-        accountName,
-      });
+    // Try multiple timezone formats that Snapchat might accept
+    const timezonesToTry = [
+      'Asia/Calcutta',      // Old name for Kolkata (IST)
+      'America/Los_Angeles', // Pacific Time (fallback)
+    ];
 
-      const payload = {
-        adaccounts: [{
-          name: accountName,
-          type: 'BUSINESS',
-          currency: 'INR',
-          timezone: 'Asia/Kolkata',
-        }],
-      };
+    let lastError = null;
 
-      console.log('🔹 Request payload:', JSON.stringify(payload, null, 2));
+    for (const timezone of timezonesToTry) {
+      try {
+        console.log('🆕 Creating new Ad Account:', {
+          organizationId,
+          accountName,
+          timezone,
+        });
 
-      const data = await this.makeAuthenticatedRequest(
-        'POST',
-        `/organizations/${organizationId}/adaccounts`,
-        accessToken,
-        payload
-      );
-      
-      console.log('✅ Ad Account created:', JSON.stringify(data, null, 2));
+        const payload = {
+          adaccounts: [{
+            name: accountName,
+            type: 'BUSINESS',
+            currency: 'INR',
+            timezone: timezone,
+          }],
+        };
 
-      await this.logApiCall(userId, 'create_ad_account', true, {
-        request: payload,
-        response: data,
-        statusCode: 200,
-        duration: Date.now() - startTime,
-      });
+        console.log('🔹 Request payload:', JSON.stringify(payload, null, 2));
 
-      return data.adaccounts?.[0] || data;
-    } catch (error) {
-      console.error('❌ Failed to create ad account:', {
-        status: error.response?.status,
-        data: error.response?.data,
-      });
+        const data = await this.makeAuthenticatedRequest(
+          'POST',
+          `/organizations/${organizationId}/adaccounts`,
+          accessToken,
+          payload
+        );
+        
+        console.log('✅ Response data:', JSON.stringify(data, null, 2));
 
-      await this.logApiCall(userId, 'create_ad_account', false, {
-        request: { organizationId, accountName },
-        response: error.response?.data,
-        statusCode: error.response?.status,
-        duration: Date.now() - startTime,
-      }, error);
-      
-      throw new Error(`Failed to create ad account: ${error.response?.data?.request_status || error.message}`);
+        // Check if the response indicates success
+        if (data.request_status === 'SUCCESS' && data.adaccounts?.[0]?.adaccount?.id) {
+          console.log('✅ Ad Account created successfully with ID:', data.adaccounts[0].adaccount.id);
+
+          await this.logApiCall(userId, 'create_ad_account', true, {
+            request: payload,
+            response: data,
+            statusCode: 200,
+            duration: Date.now() - startTime,
+          });
+
+          return data.adaccounts[0];
+        } else if (data.adaccounts?.[0]?.sub_request_status === 'ERROR') {
+          // API call succeeded but Snapchat returned an error
+          const errorReason = data.adaccounts[0].sub_request_error_reason;
+          console.log(`⚠️  Timezone ${timezone} failed:`, errorReason);
+          lastError = errorReason;
+          
+          // If it's a timezone error, try the next timezone
+          if (errorReason.includes('timezone') || errorReason.includes('E2804')) {
+            continue;
+          } else {
+            // Different error, throw immediately
+            throw new Error(errorReason);
+          }
+        }
+      } catch (error) {
+        console.error(`❌ Failed with timezone ${timezone}:`, {
+          status: error.response?.status,
+          data: error.response?.data,
+          message: error.message,
+        });
+
+        lastError = error;
+
+        // If it's a network/auth error, don't retry with different timezones
+        if (error.response?.status === 401 || error.response?.status === 403) {
+          break;
+        }
+      }
     }
+
+    // All attempts failed
+    await this.logApiCall(userId, 'create_ad_account', false, {
+      request: { organizationId, accountName },
+      response: lastError,
+      statusCode: 500,
+      duration: Date.now() - startTime,
+    }, lastError);
+    
+    throw new Error(`Failed to create ad account after trying multiple timezones: ${lastError?.message || lastError}`);
   }
 
   async createCreative(adAccountId, accessToken, creativeData, userId) {

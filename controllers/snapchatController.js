@@ -59,10 +59,21 @@ exports.handleCallback = async (req, res) => {
     const organizations = await snapchatService.getOrganizations(tokens.accessToken, userId);
     console.log('Organizations response:', JSON.stringify(organizations, null, 2));
     
-    const organizationId = organizations[0]?.organization?.id;
-    const organizationName = organizations[0]?.organization?.name || 'My Organization';
-    console.log('Organization ID:', organizationId);
-    console.log('Organization Name:', organizationName);
+    // Prefer ENTERPRISE organizations over PROVISIONAL (more permissions)
+    let selectedOrg = organizations.find(org => org.organization?.type === 'ENTERPRISE');
+    if (!selectedOrg) {
+      selectedOrg = organizations[0]; // Fallback to first org
+    }
+    
+    const organizationId = selectedOrg?.organization?.id;
+    const organizationName = selectedOrg?.organization?.name || 'My Organization';
+    const organizationType = selectedOrg?.organization?.type;
+    
+    console.log('Selected Organization:', {
+      id: organizationId,
+      name: organizationName,
+      type: organizationType,
+    });
 
     let adAccounts = [];
     let accountId = null;
@@ -92,11 +103,18 @@ exports.handleCallback = async (req, res) => {
           
           // Extract account ID from newly created account
           accountId = newAdAccount?.adaccount?.id || newAdAccount?.id || newAdAccount?.ad_account?.id;
-          console.log('✅ Successfully created new ad account with ID:', accountId);
-          console.log('New ad account structure:', JSON.stringify(newAdAccount, null, 2));
+          
+          if (accountId) {
+            console.log('✅ Successfully created new ad account with ID:', accountId);
+            console.log('New ad account structure:', JSON.stringify(newAdAccount, null, 2));
+          } else {
+            console.log('⚠️  Ad account creation returned no ID:', JSON.stringify(newAdAccount, null, 2));
+          }
         } catch (createError) {
           console.error('❌ Failed to auto-create ad account:', createError.message);
-          // Don't throw - let user connect without ad account, they can create manually
+          console.error('Error details:', createError);
+          // Don't throw - let user connect without ad account, they can create manually later
+          console.log('⚠️  User connected but without ad account. They can create one manually in Snapchat Business Manager.');
         }
       }
     } else {
