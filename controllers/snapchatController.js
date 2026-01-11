@@ -26,28 +26,91 @@ exports.getAuthURL = async (req, res) => {
 
 exports.handleCallback = async (req, res) => {
   try {
+    console.log('========================================');
+    console.log('🔗 SNAPCHAT OAUTH CALLBACK RECEIVED');
+    console.log('========================================');
+
     const { code, state } = req.query;
 
     if (!code) {
+      console.log('❌ No authorization code provided');
       return res.status(400).json({
         success: false,
         message: 'Authorization code is required',
       });
     }
 
+    console.log('✅ Authorization code received');
     const stateData = JSON.parse(Buffer.from(state, 'base64').toString());
     const userId = stateData.userId;
+    console.log('User ID from state:', userId);
 
+    console.log('🔄 Exchanging code for tokens...');
     const tokens = await snapchatService.exchangeCodeForToken(code);
+    console.log('✅ Tokens received:', {
+      hasAccessToken: !!tokens.accessToken,
+      hasRefreshToken: !!tokens.refreshToken,
+      expiresIn: tokens.expiresIn,
+    });
 
     const expiresAt = new Date(Date.now() + tokens.expiresIn * 1000);
 
+    console.log('📋 Fetching organizations...');
     const organizations = await snapchatService.getOrganizations(tokens.accessToken, userId);
+    console.log('Organizations response:', JSON.stringify(organizations, null, 2));
     
     const organizationId = organizations[0]?.organization?.id;
-    const adAccounts = organizationId 
-      ? await snapchatService.getAdAccounts(organizationId, tokens.accessToken, userId)
-      : [];
+    const organizationName = organizations[0]?.organization?.name || 'My Organization';
+    console.log('Organization ID:', organizationId);
+    console.log('Organization Name:', organizationName);
+
+    let adAccounts = [];
+    let accountId = null;
+
+    if (organizationId) {
+      console.log('📋 Fetching ad accounts for organization:', organizationId);
+      adAccounts = await snapchatService.getAdAccounts(organizationId, tokens.accessToken, userId);
+      console.log('Ad accounts response:', JSON.stringify(adAccounts, null, 2));
+
+      // Extract account ID with better error handling
+      if (adAccounts && adAccounts.length > 0) {
+        // Try different possible structures
+        accountId = adAccounts[0]?.adaccount?.id || adAccounts[0]?.id || adAccounts[0]?.ad_account?.id;
+        console.log('✅ Found existing account ID:', accountId);
+        console.log('First ad account structure:', JSON.stringify(adAccounts[0], null, 2));
+      } else {
+        console.log('⚠️  No ad accounts found - Creating new one automatically...');
+        
+        // AUTO-CREATE AD ACCOUNT
+        try {
+          const newAdAccount = await snapchatService.createAdAccount(
+            organizationId,
+            tokens.accessToken,
+            `${organizationName} - Creator OS`,
+            userId
+          );
+          
+          // Extract account ID from newly created account
+          accountId = newAdAccount?.adaccount?.id || newAdAccount?.id || newAdAccount?.ad_account?.id;
+          console.log('✅ Successfully created new ad account with ID:', accountId);
+          console.log('New ad account structure:', JSON.stringify(newAdAccount, null, 2));
+        } catch (createError) {
+          console.error('❌ Failed to auto-create ad account:', createError.message);
+          // Don't throw - let user connect without ad account, they can create manually
+        }
+      }
+    } else {
+      console.log('⚠️  No organization found, cannot fetch/create ad accounts');
+    }
+
+    console.log('💾 Saving to database...');
+    console.log('Data to save:', {
+      isConnected: true,
+      organizationId,
+      accountId,
+      hasAccessToken: !!tokens.accessToken,
+      hasRefreshToken: !!tokens.refreshToken,
+    });
 
     await User.findByIdAndUpdate(userId, {
       'snapchatAccount.isConnected': true,
@@ -55,16 +118,32 @@ exports.handleCallback = async (req, res) => {
       'snapchatAccount.refreshToken': tokens.refreshToken,
       'snapchatAccount.expiresAt': expiresAt,
       'snapchatAccount.organizationId': organizationId,
-      'snapchatAccount.accountId': adAccounts[0]?.adaccount?.id,
+      'snapchatAccount.accountId': accountId,
     });
+
+    console.log('✅ Database updated successfully');
+    console.log('========================================');
+    console.log('✅ SNAPCHAT CONNECTION COMPLETED');
+    console.log('========================================');
 
     res.json({
       success: true,
       message: 'Snapchat account connected successfully',
       organization: organizations[0]?.organization?.name,
+      accountId: accountId,
+      debug: {
+        hasOrganization: !!organizationId,
+        hasAdAccount: !!accountId,
+        adAccountsCount: adAccounts.length,
+      },
     });
   } catch (error) {
-    console.error('Snapchat callback error:', error);
+    console.error('========================================');
+    console.error('❌ SNAPCHAT CALLBACK ERROR');
+    console.error('Error message:', error.message);
+    console.error('Error stack:', error.stack);
+    console.error('========================================');
+    
     res.status(500).json({
       success: false,
       message: 'Error connecting Snapchat account',

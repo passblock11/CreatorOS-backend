@@ -150,6 +150,60 @@ class SnapchatService {
     }
   }
 
+  async createAdAccount(organizationId, accessToken, accountName, userId) {
+    const startTime = Date.now();
+    
+    try {
+      console.log('🆕 Creating new Ad Account:', {
+        organizationId,
+        accountName,
+      });
+
+      const payload = {
+        adaccounts: [{
+          name: accountName,
+          type: 'BUSINESS',
+          currency: 'INR',
+          timezone: 'Asia/Kolkata',
+        }],
+      };
+
+      console.log('🔹 Request payload:', JSON.stringify(payload, null, 2));
+
+      const data = await this.makeAuthenticatedRequest(
+        'POST',
+        `/organizations/${organizationId}/adaccounts`,
+        accessToken,
+        payload
+      );
+      
+      console.log('✅ Ad Account created:', JSON.stringify(data, null, 2));
+
+      await this.logApiCall(userId, 'create_ad_account', true, {
+        request: payload,
+        response: data,
+        statusCode: 200,
+        duration: Date.now() - startTime,
+      });
+
+      return data.adaccounts?.[0] || data;
+    } catch (error) {
+      console.error('❌ Failed to create ad account:', {
+        status: error.response?.status,
+        data: error.response?.data,
+      });
+
+      await this.logApiCall(userId, 'create_ad_account', false, {
+        request: { organizationId, accountName },
+        response: error.response?.data,
+        statusCode: error.response?.status,
+        duration: Date.now() - startTime,
+      }, error);
+      
+      throw new Error(`Failed to create ad account: ${error.response?.data?.request_status || error.message}`);
+    }
+  }
+
   async createCreative(adAccountId, accessToken, creativeData, userId) {
     const startTime = Date.now();
     
