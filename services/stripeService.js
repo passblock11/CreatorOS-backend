@@ -61,6 +61,7 @@ class StripeService {
         customer: customerId,
         mode: 'subscription',
         payment_method_types: ['card'],
+        billing_address_collection: 'required',
         line_items: [
           {
             price: priceId,

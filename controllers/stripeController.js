@@ -145,6 +145,8 @@ exports.getPlans = async (req, res) => {
         id: 'free',
         name: 'Free',
         price: 0,
+        priceINR: 0,
+        currency: 'USD',
         interval: 'month',
         features: [
           '10 posts per month',
@@ -162,6 +164,8 @@ exports.getPlans = async (req, res) => {
         id: 'pro',
         name: 'Pro',
         price: 29,
+        priceINR: 2499,
+        currency: 'INR',
         interval: 'month',
         priceId: process.env.STRIPE_PRICE_ID_PRO,
         features: [
@@ -181,6 +185,8 @@ exports.getPlans = async (req, res) => {
         id: 'business',
         name: 'Business',
         price: 99,
+        priceINR: 8299,
+        currency: 'INR',
         interval: 'month',
         priceId: process.env.STRIPE_PRICE_ID_BUSINESS,
         features: [
