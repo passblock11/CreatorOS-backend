@@ -124,13 +124,23 @@ exports.webhook = async (req, res) => {
   const sig = req.headers['stripe-signature'];
 
   try {
+    console.log('Webhook received:', {
+      signature: sig ? 'present' : 'missing',
+      bodyType: typeof req.body,
+    });
+
     const event = stripeService.constructWebhookEvent(req.body, sig);
+
+    console.log('Webhook event type:', event.type);
+    console.log('Webhook event data:', JSON.stringify(event.data.object, null, 2));
 
     await stripeService.handleWebhook(event);
 
+    console.log('Webhook processed successfully');
     res.json({ received: true });
   } catch (error) {
-    console.error('Webhook error:', error);
+    console.error('Webhook error:', error.message);
+    console.error('Webhook error stack:', error.stack);
     res.status(400).json({
       success: false,
       message: `Webhook Error: ${error.message}`,

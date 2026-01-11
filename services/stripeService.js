@@ -160,29 +160,56 @@ class StripeService {
   }
 
   async handleCheckoutComplete(session) {
-    const userId = session.metadata.userId;
-    const customerId = session.customer;
-    const subscriptionId = session.subscription;
+    try {
+      console.log('Processing checkout.session.completed');
+      console.log('Session metadata:', session.metadata);
+      console.log('Customer ID:', session.customer);
+      console.log('Subscription ID:', session.subscription);
 
-    const subscription = await stripe.subscriptions.retrieve(subscriptionId);
-    const priceId = subscription.items.data[0].price.id;
+      const userId = session.metadata.userId;
+      const customerId = session.customer;
+      const subscriptionId = session.subscription;
 
-    let plan = 'free';
-    if (priceId === process.env.STRIPE_PRICE_ID_PRO) {
-      plan = 'pro';
-    } else if (priceId === process.env.STRIPE_PRICE_ID_BUSINESS) {
-      plan = 'business';
+      if (!subscriptionId) {
+        console.error('No subscription ID in checkout session');
+        return;
+      }
+
+      const subscription = await stripe.subscriptions.retrieve(subscriptionId);
+      const priceId = subscription.items.data[0].price.id;
+
+      console.log('Retrieved subscription:', subscription.id);
+      console.log('Price ID:', priceId);
+      console.log('Expected Pro Price ID:', process.env.STRIPE_PRICE_ID_PRO);
+      console.log('Expected Business Price ID:', process.env.STRIPE_PRICE_ID_BUSINESS);
+
+      let plan = 'free';
+      if (priceId === process.env.STRIPE_PRICE_ID_PRO) {
+        plan = 'pro';
+      } else if (priceId === process.env.STRIPE_PRICE_ID_BUSINESS) {
+        plan = 'business';
+      }
+
+      console.log('Determined plan:', plan);
+
+      const updateResult = await User.findByIdAndUpdate(userId, {
+        'subscription.plan': plan,
+        'subscription.status': 'active',
+        'subscription.stripeCustomerId': customerId,
+        'subscription.stripeSubscriptionId': subscriptionId,
+        'subscription.currentPeriodEnd': new Date(subscription.current_period_end * 1000),
+      }, { new: true });
+
+      if (updateResult) {
+        console.log(`✅ Subscription activated for user ${userId}: ${plan}`);
+        console.log('Updated user subscription:', updateResult.subscription);
+      } else {
+        console.error(`❌ Failed to find user with ID: ${userId}`);
+      }
+    } catch (error) {
+      console.error('Error in handleCheckoutComplete:', error);
+      throw error;
     }
-
-    await User.findByIdAndUpdate(userId, {
-      'subscription.plan': plan,
-      'subscription.status': 'active',
-      'subscription.stripeCustomerId': customerId,
-      'subscription.stripeSubscriptionId': subscriptionId,
-      'subscription.currentPeriodEnd': new Date(subscription.current_period_end * 1000),
-    });
-
-    console.log(`Subscription activated for user ${userId}: ${plan}`);
   }
 
   async handleSubscriptionUpdated(subscription) {
