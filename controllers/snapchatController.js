@@ -118,21 +118,43 @@ exports.getStatus = async (req, res) => {
 };
 
 async function ensureValidToken(user) {
+  console.log('🔐 ensureValidToken called');
+  console.log('User ID:', user._id);
+  console.log('Snapchat connected:', user.snapchatAccount.isConnected);
+
   if (!user.snapchatAccount.isConnected) {
+    console.log('❌ Snapchat account not connected');
     throw new Error('Snapchat account not connected');
   }
 
   const now = new Date();
   const expiresAt = new Date(user.snapchatAccount.expiresAt);
 
+  console.log('Token expiry check:', {
+    now: now.toISOString(),
+    expiresAt: expiresAt.toISOString(),
+    isExpired: now >= expiresAt,
+  });
+
   if (now >= expiresAt) {
-    const tokens = await snapchatService.refreshAccessToken(user.snapchatAccount.refreshToken);
+    console.log('🔄 Token expired, refreshing...');
     
-    user.snapchatAccount.accessToken = tokens.accessToken;
-    user.snapchatAccount.refreshToken = tokens.refreshToken;
-    user.snapchatAccount.expiresAt = new Date(Date.now() + tokens.expiresIn * 1000);
-    
-    await user.save();
+    try {
+      const tokens = await snapchatService.refreshAccessToken(user.snapchatAccount.refreshToken);
+      
+      user.snapchatAccount.accessToken = tokens.accessToken;
+      user.snapchatAccount.refreshToken = tokens.refreshToken;
+      user.snapchatAccount.expiresAt = new Date(Date.now() + tokens.expiresIn * 1000);
+      
+      await user.save();
+      console.log('✅ Token refreshed successfully');
+      console.log('New expiry:', user.snapchatAccount.expiresAt);
+    } catch (refreshError) {
+      console.error('❌ Token refresh failed:', refreshError.message);
+      throw new Error('Failed to refresh Snapchat token. Please reconnect your account.');
+    }
+  } else {
+    console.log('✅ Token is still valid');
   }
 
   return user.snapchatAccount.accessToken;

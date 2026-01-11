@@ -154,6 +154,12 @@ class SnapchatService {
     const startTime = Date.now();
     
     try {
+      console.log('🔹 createCreative called with:', {
+        adAccountId,
+        creativeData,
+        userId: userId.toString(),
+      });
+
       const payload = {
         creatives: [{
           name: creativeData.name,
@@ -166,6 +172,9 @@ class SnapchatService {
         }],
       };
 
+      console.log('🔹 Making API request to:', `/adaccounts/${adAccountId}/creatives`);
+      console.log('🔹 Request payload:', JSON.stringify(payload, null, 2));
+
       const data = await this.makeAuthenticatedRequest(
         'POST',
         `/adaccounts/${adAccountId}/creatives`,
@@ -173,6 +182,8 @@ class SnapchatService {
         payload
       );
       
+      console.log('✅ Create creative response:', JSON.stringify(data, null, 2));
+
       await this.logApiCall(userId, 'create_creative', true, {
         request: payload,
         response: data,
@@ -182,6 +193,13 @@ class SnapchatService {
 
       return data.creatives?.[0];
     } catch (error) {
+      console.error('❌ Create creative error:', {
+        message: error.message,
+        status: error.response?.status,
+        statusText: error.response?.statusText,
+        data: error.response?.data,
+      });
+
       await this.logApiCall(userId, 'create_creative', false, {
         request: creativeData,
         response: error.response?.data,
@@ -197,6 +215,12 @@ class SnapchatService {
     const startTime = Date.now();
     
     try {
+      console.log('🔹 uploadMedia called with:', {
+        adAccountId,
+        mediaData,
+        userId: userId.toString(),
+      });
+
       const payload = {
         media: [{
           name: mediaData.name,
@@ -205,6 +229,9 @@ class SnapchatService {
         }],
       };
 
+      console.log('🔹 Making API request to:', `/adaccounts/${adAccountId}/media`);
+      console.log('🔹 Request payload:', JSON.stringify(payload, null, 2));
+
       const data = await this.makeAuthenticatedRequest(
         'POST',
         `/adaccounts/${adAccountId}/media`,
@@ -212,6 +239,8 @@ class SnapchatService {
         payload
       );
       
+      console.log('✅ Upload media response:', JSON.stringify(data, null, 2));
+
       await this.logApiCall(userId, 'upload_media', true, {
         request: payload,
         response: data,
@@ -221,6 +250,13 @@ class SnapchatService {
 
       return data.media?.[0];
     } catch (error) {
+      console.error('❌ Upload media error:', {
+        message: error.message,
+        status: error.response?.status,
+        statusText: error.response?.statusText,
+        data: error.response?.data,
+      });
+
       await this.logApiCall(userId, 'upload_media', false, {
         request: mediaData,
         response: error.response?.data,

@@ -189,19 +189,34 @@ exports.deletePost = async (req, res) => {
 
 exports.publishPost = async (req, res) => {
   try {
+    console.log('========================================');
+    console.log('📤 PUBLISH POST REQUEST STARTED');
+    console.log('Post ID:', req.params.id);
+    console.log('User ID:', req.user._id);
+    console.log('========================================');
+
     const post = await Post.findOne({
       _id: req.params.id,
       user: req.user._id,
     });
 
     if (!post) {
+      console.log('❌ Post not found');
       return res.status(404).json({
         success: false,
         message: 'Post not found',
       });
     }
 
+    console.log('✅ Post found:', {
+      title: post.title,
+      status: post.status,
+      mediaType: post.mediaType,
+      mediaUrl: post.mediaUrl,
+    });
+
     if (post.status === 'published') {
+      console.log('❌ Post already published');
       return res.status(400).json({
         success: false,
         message: 'Post is already published',
@@ -209,16 +224,35 @@ exports.publishPost = async (req, res) => {
     }
 
     const user = await User.findById(req.user._id);
+    console.log('✅ User loaded:', {
+      email: user.email,
+      snapchatConnected: user.snapchatAccount.isConnected,
+      accountId: user.snapchatAccount.accountId,
+      plan: user.subscription.plan,
+      postsThisMonth: user.usage.postsThisMonth,
+    });
 
     if (!user.snapchatAccount.isConnected) {
+      console.log('❌ Snapchat account not connected');
       return res.status(400).json({
         success: false,
         message: 'Please connect your Snapchat account first',
       });
     }
 
+    if (!user.snapchatAccount.accountId) {
+      console.log('❌ Snapchat account ID missing');
+      return res.status(400).json({
+        success: false,
+        message: 'Snapchat account ID is missing. Please reconnect your Snapchat account.',
+      });
+    }
+
     const limits = user.getPlanLimits();
+    console.log('📊 Plan limits:', limits);
+    
     if (limits.postsPerMonth !== -1 && user.usage.postsThisMonth >= limits.postsPerMonth) {
+      console.log('❌ Monthly post limit reached');
       return res.status(403).json({
         success: false,
         message: `You have reached your monthly post limit (${limits.postsPerMonth}). Please upgrade your plan.`,
@@ -226,10 +260,20 @@ exports.publishPost = async (req, res) => {
     }
 
     try {
+      console.log('🔐 Getting/refreshing access token...');
       const accessToken = await ensureValidToken(user);
+      console.log('✅ Access token obtained:', accessToken ? `${accessToken.substring(0, 20)}...` : 'null');
 
       let mediaId = null;
       if (post.mediaUrl) {
+        console.log('📸 Uploading media to Snapchat...');
+        console.log('Media details:', {
+          accountId: user.snapchatAccount.accountId,
+          name: post.title,
+          type: post.mediaType === 'video' ? 'VIDEO' : 'IMAGE',
+          url: post.mediaUrl,
+        });
+
         const media = await snapchatService.uploadMedia(
           user.snapchatAccount.accountId,
           accessToken,
@@ -241,7 +285,19 @@ exports.publishPost = async (req, res) => {
           user._id
         );
         mediaId = media.id;
+        console.log('✅ Media uploaded successfully. Media ID:', mediaId);
+      } else {
+        console.log('ℹ️  No media to upload (text-only post)');
       }
+
+      console.log('🎨 Creating Snapchat creative...');
+      console.log('Creative details:', {
+        accountId: user.snapchatAccount.accountId,
+        name: post.title,
+        headline: post.content.substring(0, 34),
+        mediaId: mediaId,
+        brandName: 'Creator OS',
+      });
 
       const creative = await snapchatService.createCreative(
         user.snapchatAccount.accountId,
@@ -256,13 +312,21 @@ exports.publishPost = async (req, res) => {
         user._id
       );
 
+      console.log('✅ Creative created successfully. Creative ID:', creative.id);
+
       post.status = 'published';
       post.publishedAt = new Date();
       post.snapchatCreativeId = creative.id;
       await post.save();
+      console.log('✅ Post saved as published');
 
       user.usage.postsThisMonth += 1;
       await user.save();
+      console.log('✅ User usage incremented');
+
+      console.log('========================================');
+      console.log('✅ PUBLISH POST COMPLETED SUCCESSFULLY');
+      console.log('========================================');
 
       res.json({
         success: true,
@@ -270,21 +334,36 @@ exports.publishPost = async (req, res) => {
         post,
       });
     } catch (snapError) {
+      console.error('========================================');
+      console.error('❌ SNAPCHAT API ERROR:');
+      console.error('Error message:', snapError.message);
+      console.error('Error stack:', snapError.stack);
+      console.error('Error response:', snapError.response?.data);
+      console.error('========================================');
+
       post.status = 'failed';
       post.error = {
         message: snapError.message,
+        code: snapError.response?.data?.request_status || 'UNKNOWN',
         timestamp: new Date(),
       };
       await post.save();
+      console.log('⚠️  Post marked as failed and saved');
 
       return res.status(500).json({
         success: false,
         message: 'Failed to publish to Snapchat',
         error: snapError.message,
+        details: snapError.response?.data,
       });
     }
   } catch (error) {
-    console.error('Publish post error:', error);
+    console.error('========================================');
+    console.error('❌ PUBLISH POST ERROR (OUTER):');
+    console.error('Error message:', error.message);
+    console.error('Error stack:', error.stack);
+    console.error('========================================');
+    
     res.status(500).json({
       success: false,
       message: 'Error publishing post',
