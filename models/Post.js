@@ -1,0 +1,71 @@
+const mongoose = require('mongoose');
+
+const postSchema = new mongoose.Schema({
+  user: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true,
+  },
+  title: {
+    type: String,
+    required: [true, 'Title is required'],
+    trim: true,
+    maxlength: [200, 'Title cannot exceed 200 characters'],
+  },
+  content: {
+    type: String,
+    required: [true, 'Content is required'],
+  },
+  mediaUrl: {
+    type: String,
+  },
+  mediaType: {
+    type: String,
+    enum: ['image', 'video', 'none'],
+    default: 'none',
+  },
+  status: {
+    type: String,
+    enum: ['draft', 'scheduled', 'published', 'failed'],
+    default: 'draft',
+  },
+  scheduledFor: {
+    type: Date,
+  },
+  publishedAt: {
+    type: Date,
+  },
+  snapchatPostId: {
+    type: String,
+  },
+  snapchatCreativeId: {
+    type: String,
+  },
+  analytics: {
+    views: {
+      type: Number,
+      default: 0,
+    },
+    impressions: {
+      type: Number,
+      default: 0,
+    },
+    reach: {
+      type: Number,
+      default: 0,
+    },
+    lastSynced: Date,
+  },
+  error: {
+    message: String,
+    code: String,
+    timestamp: Date,
+  },
+}, {
+  timestamps: true,
+});
+
+postSchema.index({ user: 1, createdAt: -1 });
+postSchema.index({ status: 1, scheduledFor: 1 });
+
+module.exports = mongoose.model('Post', postSchema);
