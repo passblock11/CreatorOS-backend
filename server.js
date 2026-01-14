@@ -8,6 +8,7 @@ const errorHandler = require('./middleware/errorHandler');
 
 const authRoutes = require('./routes/auth');
 const snapchatRoutes = require('./routes/snapchat');
+const instagramRoutes = require('./routes/instagram');
 const postRoutes = require('./routes/posts');
 const stripeRoutes = require('./routes/stripe');
 const adminRoutes = require('./routes/admin');
@@ -41,6 +42,7 @@ app.get('/health', (req, res) => {
 
 app.use('/api/auth', authRoutes);
 app.use('/api/snapchat', snapchatRoutes);
+app.use('/api/instagram', instagramRoutes);
 app.use('/api/posts', postRoutes);
 app.use('/api/stripe', stripeRoutes);
 app.use('/api/admin', adminRoutes);

@@ -24,6 +24,11 @@ const postSchema = new mongoose.Schema({
     enum: ['image', 'video', 'none'],
     default: 'none',
   },
+  platform: {
+    type: String,
+    enum: ['snapchat', 'instagram', 'both'],
+    default: 'snapchat',
+  },
   status: {
     type: String,
     enum: ['draft', 'scheduled', 'published', 'failed'],
@@ -38,7 +43,7 @@ const postSchema = new mongoose.Schema({
   snapchatPostId: {
     type: String,
   },
-  snapchatCreativeId: {
+  instagramPostId: {
     type: String,
   },
   analytics: {

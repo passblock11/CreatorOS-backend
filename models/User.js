@@ -49,8 +49,21 @@ const userSchema = new mongoose.Schema({
     accessToken: String,
     refreshToken: String,
     expiresAt: Date,
-    accountId: String,
-    organizationId: String,
+    profileId: String,
+    displayName: String,
+  },
+  instagramAccount: {
+    isConnected: {
+      type: Boolean,
+      default: false,
+    },
+    accessToken: String,
+    expiresAt: Date,
+    userId: String,
+    username: String,
+    accountType: String,
+    pageId: String,
+    pageName: String,
   },
   usage: {
     postsThisMonth: {
