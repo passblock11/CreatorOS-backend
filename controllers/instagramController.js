@@ -117,7 +117,7 @@ exports.handleCallback = async (req, res) => {
       expiresAt: expiresAt,
       userId: instagramAccount.id,
       username: instagramAccount.username,
-      accountType: instagramAccount.account_type,
+      // accountType removed - not available on IGUser
       pageId: selectedPage.id,
       pageName: selectedPage.name
     };
@@ -154,7 +154,6 @@ exports.getStatus = async (req, res) => {
       isConnected,
       account: isConnected ? {
         username: user.instagramAccount.username,
-        accountType: user.instagramAccount.accountType,
         pageName: user.instagramAccount.pageName
       } : null
     });

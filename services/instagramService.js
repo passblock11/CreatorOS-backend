@@ -232,7 +232,8 @@ class InstagramService {
       const response = await axios.get(`${this.graphApiUrl}/${instagramBusinessAccountId}`, {
         params: {
           access_token: pageAccessToken,
-          fields: 'id,username,account_type,profile_picture_url'
+          // Removed 'account_type' - not available on IGUser
+          fields: 'id,username,name,profile_picture_url'
         }
       });
 
