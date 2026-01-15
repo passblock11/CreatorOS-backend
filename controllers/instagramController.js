@@ -60,10 +60,22 @@ exports.handleCallback = async (req, res) => {
     
     // Get user's Facebook pages
     console.log('📄 [Instagram] Fetching pages...');
+    console.log('📄 Token Data:', { hasAccessToken: !!tokenData.access_token, expiresIn: tokenData.expires_in });
+    
     const pages = await instagramService.getUserPages(tokenData.access_token);
     
+    console.log('📄 Pages returned:', pages?.length || 0);
+    console.log('📄 Full pages data:', JSON.stringify(pages, null, 2));
+    
     if (!pages || pages.length === 0) {
-      console.error('❌ [Instagram] No Facebook pages found');
+      console.error('\n❌ [Instagram] NO FACEBOOK PAGES FOUND');
+      console.error('❌ Troubleshooting steps:');
+      console.error('   1. Check if user is ADMIN of Facebook Page (not Editor/Moderator)');
+      console.error('   2. Verify Facebook Page exists and is active');
+      console.error('   3. Ensure OAuth scopes include: pages_show_list, pages_read_engagement');
+      console.error('   4. Check if user granted all permissions during OAuth');
+      console.error('   5. Try creating a NEW Facebook Page where user is default Admin');
+      console.error('\n');
       return res.redirect(`${process.env.FRONTEND_URL}/settings?instagram=error&message=No Facebook pages found. Please create a Facebook page connected to your Instagram Business account.`);
     }
 

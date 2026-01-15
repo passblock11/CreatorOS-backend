@@ -90,19 +90,54 @@ class InstagramService {
   async getUserPages(accessToken) {
     try {
       console.log('📱 [Instagram] Fetching user pages...');
+      console.log('🔑 Access Token (first 30 chars):', accessToken?.substring(0, 30) + '...');
       
+      // First, get basic user info for debugging
+      console.log('👤 Getting user info first...');
+      const userInfoResponse = await axios.get(`${this.graphApiUrl}/me`, {
+        params: {
+          access_token: accessToken,
+          fields: 'id,name,email'
+        }
+      });
+      console.log('👤 User Info:', JSON.stringify(userInfoResponse.data, null, 2));
+      
+      // Now get pages with all fields
+      console.log('📄 Fetching pages with extended fields...');
       const response = await axios.get(`${this.graphApiUrl}/me/accounts`, {
         params: {
           access_token: accessToken,
-          fields: 'id,name,instagram_business_account,access_token'
+          fields: 'id,name,instagram_business_account{id,username,name},access_token,category,tasks'
         }
       });
 
+      console.log('📊 RAW Facebook API Response:', JSON.stringify(response.data, null, 2));
       console.log(`✅ [Instagram] Found ${response.data.data?.length || 0} pages`);
+      
+      if (response.data.data && response.data.data.length > 0) {
+        response.data.data.forEach((page, index) => {
+          console.log(`\n📄 Page ${index + 1} Details:`);
+          console.log('  - ID:', page.id);
+          console.log('  - Name:', page.name);
+          console.log('  - Category:', page.category);
+          console.log('  - Has Access Token:', !!page.access_token);
+          console.log('  - Has Instagram:', !!page.instagram_business_account);
+          console.log('  - Instagram ID:', page.instagram_business_account?.id || 'N/A');
+          console.log('  - Instagram Username:', page.instagram_business_account?.username || 'N/A');
+          console.log('  - Tasks/Permissions:', page.tasks || 'N/A');
+        });
+      } else {
+        console.log('\n⚠️ WARNING: No pages found in response!');
+        console.log('⚠️ This means:');
+        console.log('  1. User is not Admin of any Facebook Page, OR');
+        console.log('  2. OAuth permissions not granted (check scopes), OR');
+        console.log('  3. Facebook Page not created yet');
+      }
       
       return response.data.data || [];
     } catch (error) {
       console.error('❌ [Instagram] Get pages error:', error.response?.data || error.message);
+      console.error('❌ Full error object:', JSON.stringify(error.response?.data || error, null, 2));
       throw new Error(`Failed to get user pages: ${error.response?.data?.error?.message || error.message}`);
     }
   }
