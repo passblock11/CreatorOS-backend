@@ -15,15 +15,23 @@ cloudinary.config({
 const parseForm = (req) => {
   return new Promise((resolve, reject) => {
     const form = formidable({
-      maxFileSize: 100 * 1024 * 1024, // 100MB
+      maxFileSize: 50 * 1024 * 1024, // 50MB for images
+      maxTotalFileSize: 100 * 1024 * 1024, // 100MB total
       keepExtensions: true,
       multiples: false,
+      allowEmptyFiles: false,
+      minFileSize: 1, // At least 1 byte
+      maxFields: 1000,
+      maxFieldsSize: 50 * 1024 * 1024, // 50MB
     });
 
     form.parse(req, (err, fields, files) => {
       if (err) {
+        console.error('❌ [Upload] Formidable parse error:', err);
         reject(err);
       } else {
+        console.log('✅ [Upload] Formidable parsed successfully');
+        console.log('📁 [Upload] Files received:', Object.keys(files));
         resolve({ fields, files });
       }
     });
@@ -35,13 +43,21 @@ const parseForm = (req) => {
  */
 const uploadToCloudinary = (filePath, options = {}) => {
   return new Promise((resolve, reject) => {
+    const uploadOptions = {
+      folder: options.folder || 'creator-os',
+      resource_type: options.resource_type || 'auto',
+      transformation: options.transformation || null,
+    };
+
+    // For videos, add specific options
+    if (options.resource_type === 'video') {
+      uploadOptions.chunk_size = 6000000; // 6MB chunks for large videos
+      uploadOptions.timeout = 120000; // 2 minutes timeout
+    }
+
     cloudinary.uploader.upload(
       filePath,
-      {
-        folder: options.folder || 'creator-os',
-        resource_type: options.resource_type || 'auto',
-        transformation: options.transformation || null,
-      },
+      uploadOptions,
       (error, result) => {
         if (error) {
           console.error('❌ [Upload] Cloudinary upload error:', error);

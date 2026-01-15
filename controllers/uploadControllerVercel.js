@@ -62,11 +62,28 @@ exports.uploadMedia = async (req, res) => {
       });
     }
 
-    // Determine resource type
+    // Validate file size
+    const maxImageSize = 50 * 1024 * 1024; // 50MB for images
+    const maxVideoSize = 100 * 1024 * 1024; // 100MB for videos
     const isVideo = uploadedFile.mimetype.startsWith('video/');
+    const maxSize = isVideo ? maxVideoSize : maxImageSize;
+
+    if (uploadedFile.size > maxSize) {
+      // Clean up temp file
+      if (fs.existsSync(uploadedFile.filepath)) {
+        fs.unlinkSync(uploadedFile.filepath);
+      }
+      return res.status(400).json({
+        success: false,
+        message: `File too large. Maximum size is ${isVideo ? '100MB for videos' : '50MB for images'}.`,
+      });
+    }
+
+    // Determine resource type
     const resourceType = isVideo ? 'video' : 'image';
 
     console.log(`📤 [Upload] Uploading ${resourceType} to Cloudinary...`);
+    console.log(`📤 [Upload] File size: ${(uploadedFile.size / 1024 / 1024).toFixed(2)} MB`);
 
     tempFilePath = uploadedFile.filepath;
 
