@@ -96,6 +96,27 @@ exports.getPost = async (req, res) => {
       });
     }
 
+    // Auto-sync analytics if:
+    // 1. Post is published to Instagram
+    // 2. Analytics haven't been synced in the last 30 minutes
+    const shouldAutoSync = 
+      post.status === 'published' &&
+      post.instagramPostId &&
+      (!post.analytics?.lastSynced || 
+       Date.now() - new Date(post.analytics.lastSynced).getTime() > 30 * 60 * 1000);
+
+    if (shouldAutoSync) {
+      try {
+        console.log('🔄 [Analytics] Auto-syncing analytics for post:', post._id);
+        const user = await User.findById(req.user._id);
+        await syncPostAnalytics(post, user);
+        console.log('✅ [Analytics] Auto-sync complete');
+      } catch (syncError) {
+        // Don't fail the request if auto-sync fails
+        console.error('⚠️ [Analytics] Auto-sync failed:', syncError.message);
+      }
+    }
+
     res.json({
       success: true,
       post,
@@ -455,6 +476,48 @@ exports.publishPost = async (req, res) => {
   }
 };
 
+/**
+ * Helper function to sync analytics for a single post
+ */
+const syncPostAnalytics = async (post, user) => {
+  if (!post.instagramPostId) {
+    throw new Error('Post not published to Instagram');
+  }
+
+  if (!user.instagramAccount?.isConnected) {
+    throw new Error('Instagram account not connected');
+  }
+
+  console.log('📊 Fetching analytics from Instagram for post:', post._id);
+  
+  // Ensure valid token
+  const instagramAccount = await ensureValidInstagramToken(user);
+  
+  // Fetch analytics
+  const analytics = await instagramService.getPostInsights(
+    post.instagramPostId,
+    instagramAccount.accessToken
+  );
+
+  // Update post analytics
+  post.analytics.instagram = {
+    likes: analytics.likes,
+    comments: analytics.comments,
+    saves: analytics.saves,
+    reach: analytics.reach,
+    impressions: analytics.impressions,
+    engagement: analytics.engagement,
+  };
+  post.analytics.lastSynced = new Date();
+
+  await post.save();
+
+  return post.analytics;
+};
+
+/**
+ * Sync Instagram analytics for a single post (manual trigger)
+ */
 exports.syncInstagramAnalytics = async (req, res) => {
   try {
     console.log('📊 [Analytics] Syncing Instagram analytics for post:', req.params.id);
@@ -471,58 +534,99 @@ exports.syncInstagramAnalytics = async (req, res) => {
       });
     }
 
-    if (!post.instagramPostId) {
-      return res.status(400).json({
-        success: false,
-        message: 'This post was not published to Instagram',
-      });
-    }
-
     const user = await User.findById(req.user._id);
     
-    if (!user.instagramAccount?.isConnected) {
-      return res.status(400).json({
-        success: false,
-        message: 'Instagram account not connected',
-      });
-    }
-
-    console.log('📊 Fetching analytics from Instagram...');
-    
-    // Ensure valid token
-    const instagramAccount = await ensureValidInstagramToken(user);
-    
-    // Fetch analytics
-    const analytics = await instagramService.getPostInsights(
-      post.instagramPostId,
-      instagramAccount.accessToken
-    );
-
-    // Update post analytics
-    post.analytics.instagram = {
-      likes: analytics.likes,
-      comments: analytics.comments,
-      saves: analytics.saves,
-      reach: analytics.reach,
-      impressions: analytics.impressions,
-      engagement: analytics.engagement,
-    };
-    post.analytics.lastSynced = new Date();
-
-    await post.save();
+    const analytics = await syncPostAnalytics(post, user);
 
     console.log('✅ Analytics synced successfully');
 
     res.json({
       success: true,
       message: 'Analytics synced successfully',
-      analytics: post.analytics,
+      analytics,
     });
   } catch (error) {
     console.error('❌ Sync analytics error:', error);
     res.status(500).json({
       success: false,
       message: 'Error syncing analytics',
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * Auto-sync analytics for all Instagram posts (Cron job endpoint)
+ */
+exports.autoSyncAllAnalytics = async (req, res) => {
+  try {
+    console.log('🔄 [Analytics] Starting batch analytics sync...');
+
+    // Verify cron secret for security
+    const cronSecret = req.headers['x-cron-secret'] || req.query.secret;
+    if (cronSecret !== process.env.CRON_SECRET) {
+      return res.status(401).json({
+        success: false,
+        message: 'Unauthorized',
+      });
+    }
+
+    // Find all published posts with Instagram post IDs
+    // Only sync posts that haven't been synced in the last hour
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+    
+    const posts = await Post.find({
+      status: 'published',
+      instagramPostId: { $exists: true, $ne: null },
+      $or: [
+        { 'analytics.lastSynced': { $lt: oneHourAgo } },
+        { 'analytics.lastSynced': { $exists: false } },
+      ],
+    }).populate('user');
+
+    console.log(`📊 Found ${posts.length} posts to sync`);
+
+    const results = {
+      total: posts.length,
+      synced: 0,
+      failed: 0,
+      errors: [],
+    };
+
+    // Sync each post
+    for (const post of posts) {
+      try {
+        if (!post.user) {
+          console.log(`⚠️ Post ${post._id} has no user, skipping`);
+          results.failed++;
+          continue;
+        }
+
+        await syncPostAnalytics(post, post.user);
+        results.synced++;
+        console.log(`✅ Synced analytics for post ${post._id}`);
+      } catch (error) {
+        console.error(`❌ Failed to sync post ${post._id}:`, error.message);
+        results.failed++;
+        results.errors.push({
+          postId: post._id,
+          error: error.message,
+        });
+      }
+    }
+
+    console.log('🎉 [Analytics] Batch sync complete:', results);
+
+    res.json({
+      success: true,
+      message: 'Analytics batch sync complete',
+      results,
+    });
+  } catch (error) {
+    console.error('❌ Batch sync error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error in batch analytics sync',
       error: error.message,
     });
   }
