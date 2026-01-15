@@ -11,6 +11,7 @@ class InstagramService {
 
   /**
    * Generate OAuth authorization URL
+   * Updated to include business management permissions
    */
   getAuthorizationUrl(userId) {
     const state = Buffer.from(JSON.stringify({
@@ -21,7 +22,8 @@ class InstagramService {
     const params = new URLSearchParams({
       client_id: this.appId,
       redirect_uri: this.redirectUri,
-      scope: 'instagram_basic,instagram_content_publish,pages_show_list,pages_read_engagement',
+      // Added business_management scope for Business Manager pages
+      scope: 'instagram_basic,instagram_content_publish,pages_show_list,pages_read_engagement,business_management',
       response_type: 'code',
       state: state
     });
@@ -85,7 +87,55 @@ class InstagramService {
   }
 
   /**
+   * Get pages from Business Manager
+   */
+  async getBusinessPages(accessToken) {
+    try {
+      console.log('🏢 [Instagram] Fetching Business Manager pages...');
+      
+      // Get user's businesses
+      const businessesResponse = await axios.get(`${this.graphApiUrl}/me/businesses`, {
+        params: {
+          access_token: accessToken,
+          fields: 'id,name'
+        }
+      });
+
+      console.log('🏢 Found businesses:', businessesResponse.data.data?.length || 0);
+
+      const allPages = [];
+
+      // For each business, get its pages
+      for (const business of businessesResponse.data.data || []) {
+        console.log(`🏢 Fetching pages for business: ${business.name} (${business.id})`);
+        
+        try {
+          const pagesResponse = await axios.get(`${this.graphApiUrl}/${business.id}/client_pages`, {
+            params: {
+              access_token: accessToken,
+              fields: 'id,name,instagram_business_account{id,username,name},access_token,category'
+            }
+          });
+
+          if (pagesResponse.data.data && pagesResponse.data.data.length > 0) {
+            console.log(`✅ Found ${pagesResponse.data.data.length} pages in business ${business.name}`);
+            allPages.push(...pagesResponse.data.data);
+          }
+        } catch (error) {
+          console.log(`⚠️ Could not fetch pages for business ${business.name}:`, error.message);
+        }
+      }
+
+      return allPages;
+    } catch (error) {
+      console.error('❌ [Instagram] Get business pages error:', error.response?.data || error.message);
+      return [];
+    }
+  }
+
+  /**
    * Get user's Facebook pages and Instagram accounts
+   * Supports both personal pages AND Business Manager pages
    */
   async getUserPages(accessToken) {
     try {
@@ -102,20 +152,49 @@ class InstagramService {
       });
       console.log('👤 User Info:', JSON.stringify(userInfoResponse.data, null, 2));
       
-      // Now get pages with all fields
-      console.log('📄 Fetching pages with extended fields...');
-      const response = await axios.get(`${this.graphApiUrl}/me/accounts`, {
-        params: {
-          access_token: accessToken,
-          fields: 'id,name,instagram_business_account{id,username,name},access_token,category,tasks'
-        }
-      });
+      // Strategy: Try BOTH personal pages AND business manager pages
+      let allPages = [];
 
-      console.log('📊 RAW Facebook API Response:', JSON.stringify(response.data, null, 2));
-      console.log(`✅ [Instagram] Found ${response.data.data?.length || 0} pages`);
+      // Method 1: Try personal pages first
+      console.log('\n📄 Method 1: Fetching personal pages...');
+      try {
+        const personalResponse = await axios.get(`${this.graphApiUrl}/me/accounts`, {
+          params: {
+            access_token: accessToken,
+            fields: 'id,name,instagram_business_account{id,username,name},access_token,category,tasks'
+          }
+        });
+
+        console.log('📊 Personal Pages Response:', JSON.stringify(personalResponse.data, null, 2));
+        
+        if (personalResponse.data.data && personalResponse.data.data.length > 0) {
+          console.log(`✅ Found ${personalResponse.data.data.length} personal pages`);
+          allPages.push(...personalResponse.data.data);
+        } else {
+          console.log('⚠️ No personal pages found');
+        }
+      } catch (error) {
+        console.log('⚠️ Could not fetch personal pages:', error.message);
+      }
+
+      // Method 2: Try Business Manager pages
+      console.log('\n🏢 Method 2: Fetching Business Manager pages...');
+      const businessPages = await this.getBusinessPages(accessToken);
       
-      if (response.data.data && response.data.data.length > 0) {
-        response.data.data.forEach((page, index) => {
+      if (businessPages.length > 0) {
+        console.log(`✅ Found ${businessPages.length} business pages`);
+        allPages.push(...businessPages);
+      } else {
+        console.log('⚠️ No business pages found');
+      }
+
+      // Remove duplicates based on page ID
+      const uniquePages = Array.from(new Map(allPages.map(page => [page.id, page])).values());
+      
+      console.log(`\n📊 TOTAL UNIQUE PAGES: ${uniquePages.length}`);
+      
+      if (uniquePages.length > 0) {
+        uniquePages.forEach((page, index) => {
           console.log(`\n📄 Page ${index + 1} Details:`);
           console.log('  - ID:', page.id);
           console.log('  - Name:', page.name);
@@ -127,14 +206,15 @@ class InstagramService {
           console.log('  - Tasks/Permissions:', page.tasks || 'N/A');
         });
       } else {
-        console.log('\n⚠️ WARNING: No pages found in response!');
-        console.log('⚠️ This means:');
-        console.log('  1. User is not Admin of any Facebook Page, OR');
-        console.log('  2. OAuth permissions not granted (check scopes), OR');
+        console.log('\n❌ NO PAGES FOUND (neither personal nor business)');
+        console.log('❌ Possible reasons:');
+        console.log('  1. User is not Admin of any Facebook Page');
+        console.log('  2. OAuth permissions not granted (check scopes)');
         console.log('  3. Facebook Page not created yet');
+        console.log('  4. Business Manager permissions not granted');
       }
       
-      return response.data.data || [];
+      return uniquePages;
     } catch (error) {
       console.error('❌ [Instagram] Get pages error:', error.response?.data || error.message);
       console.error('❌ Full error object:', JSON.stringify(error.response?.data || error, null, 2));
