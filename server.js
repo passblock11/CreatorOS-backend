@@ -28,10 +28,25 @@ app.use(cors({
 }));
 app.use(morgan('dev'));
 
+// Stripe webhook needs raw body
 app.use('/api/stripe/webhook', express.raw({ type: 'application/json' }));
 
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+// Apply body parsers to all routes EXCEPT upload routes
+app.use((req, res, next) => {
+  // Skip body parsing for file upload routes
+  if (req.path.startsWith('/api/upload')) {
+    return next();
+  }
+  express.json()(req, res, next);
+});
+
+app.use((req, res, next) => {
+  // Skip body parsing for file upload routes
+  if (req.path.startsWith('/api/upload')) {
+    return next();
+  }
+  express.urlencoded({ extended: true })(req, res, next);
+});
 
 app.get('/health', (req, res) => {
   res.json({

@@ -9,9 +9,13 @@ exports.uploadMedia = async (req, res) => {
 
   try {
     console.log('📤 [Upload] Upload request received');
+    console.log('📤 [Upload] Content-Type:', req.headers['content-type']);
+    console.log('📤 [Upload] Method:', req.method);
 
     // Parse form data
+    console.log('📤 [Upload] Parsing form data...');
     const { fields, files } = await parseForm(req);
+    console.log('📤 [Upload] Form parsed successfully');
     
     // Get the uploaded file
     const file = files.file;
@@ -96,20 +100,30 @@ exports.uploadMedia = async (req, res) => {
     });
   } catch (error) {
     console.error('❌ [Upload] Upload error:', error);
+    console.error('❌ [Upload] Error stack:', error.stack);
+    console.error('❌ [Upload] Error details:', {
+      message: error.message,
+      code: error.code,
+      httpCode: error.httpCode,
+    });
     
     // Clean up temp file on error
     if (tempFilePath && fs.existsSync(tempFilePath)) {
       try {
         fs.unlinkSync(tempFilePath);
+        console.log('🗑️ [Upload] Temp file cleaned up');
       } catch (cleanupError) {
-        console.error('Error cleaning up temp file:', cleanupError);
+        console.error('❌ [Upload] Error cleaning up temp file:', cleanupError);
       }
     }
 
-    res.status(500).json({
+    // Send appropriate error response
+    const statusCode = error.httpCode || 500;
+    res.status(statusCode).json({
       success: false,
       message: 'Error uploading file',
       error: error.message,
+      details: process.env.NODE_ENV === 'development' ? error.stack : undefined,
     });
   }
 };
