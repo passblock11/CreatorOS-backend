@@ -11,5 +11,6 @@ router.get('/:id', protect, postController.getPost);
 router.put('/:id', protect, postController.updatePost);
 router.delete('/:id', protect, postController.deletePost);
 router.post('/:id/publish', protect, apiLimiter, postController.publishPost);
+router.post('/:id/sync-instagram-analytics', protect, postController.syncInstagramAnalytics);
 
 module.exports = router;

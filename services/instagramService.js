@@ -403,6 +403,84 @@ class InstagramService {
   }
 
   /**
+   * Get Instagram post insights/analytics
+   */
+  async getPostInsights(mediaId, pageAccessToken) {
+    try {
+      console.log('📊 [Instagram] Fetching post insights...');
+      console.log('📊 Media ID:', mediaId);
+      
+      // Get basic post data (likes, comments)
+      const postResponse = await axios.get(`${this.graphApiUrl}/${mediaId}`, {
+        params: {
+          access_token: pageAccessToken,
+          fields: 'like_count,comments_count,timestamp,caption,media_type,media_url,permalink'
+        }
+      });
+
+      console.log('📊 Post data:', JSON.stringify(postResponse.data, null, 2));
+
+      // Get insights (impressions, reach, engagement, saves)
+      // Note: Insights are only available for Business/Creator accounts
+      let insights = {
+        impressions: 0,
+        reach: 0,
+        engagement: 0,
+        saved: 0
+      };
+
+      try {
+        const insightsResponse = await axios.get(`${this.graphApiUrl}/${mediaId}/insights`, {
+          params: {
+            access_token: pageAccessToken,
+            metric: 'impressions,reach,engagement,saved'
+          }
+        });
+
+        console.log('📊 Insights data:', JSON.stringify(insightsResponse.data, null, 2));
+
+        // Parse insights
+        if (insightsResponse.data && insightsResponse.data.data) {
+          insightsResponse.data.data.forEach(metric => {
+            if (metric.name === 'impressions') {
+              insights.impressions = metric.values[0]?.value || 0;
+            } else if (metric.name === 'reach') {
+              insights.reach = metric.values[0]?.value || 0;
+            } else if (metric.name === 'engagement') {
+              insights.engagement = metric.values[0]?.value || 0;
+            } else if (metric.name === 'saved') {
+              insights.saved = metric.values[0]?.value || 0;
+            }
+          });
+        }
+      } catch (insightError) {
+        console.log('⚠️ [Instagram] Could not fetch insights (may require time or permissions):', insightError.message);
+        // Insights might not be available immediately after posting
+        // Or account might not have permission
+      }
+
+      const analytics = {
+        likes: postResponse.data.like_count || 0,
+        comments: postResponse.data.comments_count || 0,
+        saves: insights.saved,
+        reach: insights.reach,
+        impressions: insights.impressions,
+        engagement: insights.engagement,
+        timestamp: postResponse.data.timestamp,
+        permalink: postResponse.data.permalink
+      };
+
+      console.log('✅ [Instagram] Analytics fetched:', analytics);
+      
+      return analytics;
+    } catch (error) {
+      console.error('❌ [Instagram] Get insights error:', error.response?.data || error.message);
+      console.error('❌ Full error:', JSON.stringify(error.response?.data || error, null, 2));
+      throw new Error(`Failed to get post insights: ${error.response?.data?.error?.message || error.message}`);
+    }
+  }
+
+  /**
    * Refresh access token (Instagram tokens last 60 days)
    */
   async refreshAccessToken(currentToken) {

@@ -455,6 +455,79 @@ exports.publishPost = async (req, res) => {
   }
 };
 
+exports.syncInstagramAnalytics = async (req, res) => {
+  try {
+    console.log('📊 [Analytics] Syncing Instagram analytics for post:', req.params.id);
+
+    const post = await Post.findOne({
+      _id: req.params.id,
+      user: req.user._id,
+    });
+
+    if (!post) {
+      return res.status(404).json({
+        success: false,
+        message: 'Post not found',
+      });
+    }
+
+    if (!post.instagramPostId) {
+      return res.status(400).json({
+        success: false,
+        message: 'This post was not published to Instagram',
+      });
+    }
+
+    const user = await User.findById(req.user._id);
+    
+    if (!user.instagramAccount?.isConnected) {
+      return res.status(400).json({
+        success: false,
+        message: 'Instagram account not connected',
+      });
+    }
+
+    console.log('📊 Fetching analytics from Instagram...');
+    
+    // Ensure valid token
+    const instagramAccount = await ensureValidInstagramToken(user);
+    
+    // Fetch analytics
+    const analytics = await instagramService.getPostInsights(
+      post.instagramPostId,
+      instagramAccount.accessToken
+    );
+
+    // Update post analytics
+    post.analytics.instagram = {
+      likes: analytics.likes,
+      comments: analytics.comments,
+      saves: analytics.saves,
+      reach: analytics.reach,
+      impressions: analytics.impressions,
+      engagement: analytics.engagement,
+    };
+    post.analytics.lastSynced = new Date();
+
+    await post.save();
+
+    console.log('✅ Analytics synced successfully');
+
+    res.json({
+      success: true,
+      message: 'Analytics synced successfully',
+      analytics: post.analytics,
+    });
+  } catch (error) {
+    console.error('❌ Sync analytics error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error syncing analytics',
+      error: error.message,
+    });
+  }
+};
+
 exports.getAnalytics = async (req, res) => {
   try {
     const totalPosts = await Post.countDocuments({ user: req.user._id });
@@ -468,6 +541,8 @@ exports.getAnalytics = async (req, res) => {
 
     const totalViews = recentPosts.reduce((sum, post) => sum + post.analytics.views, 0);
     const totalImpressions = recentPosts.reduce((sum, post) => sum + post.analytics.impressions, 0);
+    const totalInstagramLikes = recentPosts.reduce((sum, post) => sum + (post.analytics.instagram?.likes || 0), 0);
+    const totalInstagramComments = recentPosts.reduce((sum, post) => sum + (post.analytics.instagram?.comments || 0), 0);
 
     const user = await User.findById(req.user._id);
 
@@ -480,6 +555,8 @@ exports.getAnalytics = async (req, res) => {
         draftPosts,
         totalViews,
         totalImpressions,
+        totalInstagramLikes,
+        totalInstagramComments,
         postsThisMonth: user.usage.postsThisMonth,
         planLimits: user.getPlanLimits(),
       },

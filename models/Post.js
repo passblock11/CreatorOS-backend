@@ -47,6 +47,7 @@ const postSchema = new mongoose.Schema({
     type: String,
   },
   analytics: {
+    // Snapchat analytics
     views: {
       type: Number,
       default: 0,
@@ -58,6 +59,33 @@ const postSchema = new mongoose.Schema({
     reach: {
       type: Number,
       default: 0,
+    },
+    // Instagram analytics
+    instagram: {
+      likes: {
+        type: Number,
+        default: 0,
+      },
+      comments: {
+        type: Number,
+        default: 0,
+      },
+      saves: {
+        type: Number,
+        default: 0,
+      },
+      reach: {
+        type: Number,
+        default: 0,
+      },
+      impressions: {
+        type: Number,
+        default: 0,
+      },
+      engagement: {
+        type: Number,
+        default: 0,
+      },
     },
     lastSynced: Date,
   },
