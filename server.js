@@ -12,6 +12,7 @@ const instagramRoutes = require('./routes/instagram');
 const postRoutes = require('./routes/posts');
 const stripeRoutes = require('./routes/stripe');
 const adminRoutes = require('./routes/admin');
+const uploadRoutes = require('./routes/upload');
 
 const app = express();
 
@@ -46,6 +47,7 @@ app.use('/api/instagram', instagramRoutes);
 app.use('/api/posts', postRoutes);
 app.use('/api/stripe', stripeRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/upload', uploadRoutes);
 
 app.use((req, res) => {
   res.status(404).json({
