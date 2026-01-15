@@ -252,8 +252,22 @@ class InstagramService {
   async createMediaContainer(instagramAccountId, pageAccessToken, mediaUrl, caption, mediaType = 'IMAGE') {
     try {
       console.log(`📱 [Instagram] Creating ${mediaType} container...`);
+      console.log('📱 Instagram Account ID:', instagramAccountId);
       console.log('📸 Media URL:', mediaUrl);
-      console.log('📝 Caption:', caption.substring(0, 50) + '...');
+      console.log('📝 Caption length:', caption.length);
+      console.log('📝 Caption preview:', caption.substring(0, 50) + '...');
+      
+      // Verify media URL is accessible
+      console.log('🔍 Checking if media URL is accessible...');
+      try {
+        const headResponse = await axios.head(mediaUrl, { timeout: 10000 });
+        console.log('✅ Media URL is accessible');
+        console.log('📊 Content-Type:', headResponse.headers['content-type']);
+        console.log('📊 Content-Length:', headResponse.headers['content-length']);
+      } catch (urlError) {
+        console.error('⚠️ Media URL might not be accessible:', urlError.message);
+        throw new Error(`Media URL is not accessible: ${urlError.message}. Make sure the media is uploaded to Cloudinary first.`);
+      }
       
       const params = {
         access_token: pageAccessToken,
@@ -268,17 +282,27 @@ class InstagramService {
         params.image_url = mediaUrl;
       }
 
+      console.log('📤 Creating container with params:', JSON.stringify({ ...params, access_token: 'REDACTED' }, null, 2));
+
       const response = await axios.post(
         `${this.graphApiUrl}/${instagramAccountId}/media`,
         null,
         { params }
       );
 
+      console.log('📊 Container creation response:', JSON.stringify(response.data, null, 2));
+
+      if (!response.data || !response.data.id) {
+        console.error('❌ No container ID in response');
+        throw new Error('Container ID not returned by Instagram API');
+      }
+
       console.log('✅ [Instagram] Container created:', response.data.id);
       
       return response.data.id;
     } catch (error) {
       console.error('❌ [Instagram] Create container error:', error.response?.data || error.message);
+      console.error('❌ Full error details:', JSON.stringify(error.response?.data || error, null, 2));
       throw new Error(`Failed to create media container: ${error.response?.data?.error?.message || error.message}`);
     }
   }
@@ -310,7 +334,28 @@ class InstagramService {
       console.log('📱 [Instagram] Publishing media...');
       console.log('📱 Instagram Account ID:', instagramAccountId);
       console.log('📱 Container ID:', containerId);
+      console.log('📱 Page Access Token (first 30 chars):', pageAccessToken?.substring(0, 30) + '...');
       
+      // First, verify the container exists and is ready
+      console.log('🔍 Checking container status before publishing...');
+      try {
+        const containerCheck = await axios.get(`${this.graphApiUrl}/${containerId}`, {
+          params: {
+            access_token: pageAccessToken,
+            fields: 'id,status_code'
+          }
+        });
+        console.log('📊 Container status:', JSON.stringify(containerCheck.data, null, 2));
+        
+        if (containerCheck.data.status_code && containerCheck.data.status_code !== 'FINISHED') {
+          throw new Error(`Container not ready for publishing. Status: ${containerCheck.data.status_code}`);
+        }
+      } catch (statusError) {
+        console.error('⚠️ Could not check container status:', statusError.message);
+        // Continue anyway, might work
+      }
+
+      console.log('📤 Sending publish request...');
       const response = await axios.post(
         `${this.graphApiUrl}/${instagramAccountId}/media_publish`,
         null,
@@ -323,10 +368,13 @@ class InstagramService {
       );
 
       console.log('📊 [Instagram] Publish response:', JSON.stringify(response.data, null, 2));
+      console.log('📊 [Instagram] Response keys:', Object.keys(response.data));
+      console.log('📊 [Instagram] Has ID?:', !!response.data.id);
 
       if (!response.data || !response.data.id) {
         console.error('❌ [Instagram] No media ID in response');
-        throw new Error('Media ID is not available in the response');
+        console.error('❌ Full response object:', response.data);
+        throw new Error(`Media ID is not available. Response: ${JSON.stringify(response.data)}`);
       }
 
       console.log('✅ [Instagram] Media published:', response.data.id);
@@ -334,6 +382,9 @@ class InstagramService {
       return response.data.id;
     } catch (error) {
       console.error('❌ [Instagram] Publish error:', error.response?.data || error.message);
+      console.error('❌ [Instagram] Error code:', error.response?.data?.error?.code);
+      console.error('❌ [Instagram] Error message:', error.response?.data?.error?.message);
+      console.error('❌ [Instagram] Error type:', error.response?.data?.error?.type);
       console.error('❌ [Instagram] Full error:', JSON.stringify(error.response?.data || error, null, 2));
       throw new Error(`Failed to publish media: ${error.response?.data?.error?.message || error.message}`);
     }
