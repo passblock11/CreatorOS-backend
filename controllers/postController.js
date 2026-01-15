@@ -336,6 +336,18 @@ exports.publishPost = async (req, res) => {
         console.log('📷 Publishing to Instagram...');
         const instagramAccount = await ensureValidInstagramToken(user);
         
+        console.log('📷 Instagram account details:', {
+          userId: instagramAccount.userId,
+          username: instagramAccount.username,
+          hasAccessToken: !!instagramAccount.accessToken
+        });
+        
+        console.log('📷 Post details:', {
+          mediaUrl: post.mediaUrl,
+          mediaType: post.mediaType,
+          caption: `${post.title}\n\n${post.content}`.substring(0, 100) + '...'
+        });
+        
         const instaResult = await instagramService.uploadAndPublish(
           instagramAccount.userId,
           instagramAccount.accessToken,
@@ -344,12 +356,19 @@ exports.publishPost = async (req, res) => {
           post.mediaType === 'video' ? 'VIDEO' : 'IMAGE'
         );
 
+        console.log('📷 Instagram result:', instaResult);
+
+        if (!instaResult || !instaResult.postId) {
+          throw new Error('No post ID returned from Instagram');
+        }
+
         post.instagramPostId = instaResult.postId;
         results.instagram = { success: true, postId: instaResult.postId };
         
-        console.log('✅ Published to Instagram successfully');
+        console.log('✅ Published to Instagram successfully, Post ID:', instaResult.postId);
       } catch (instaError) {
         console.error('❌ Instagram publish error:', instaError.message);
+        console.error('❌ Instagram error stack:', instaError.stack);
         results.errors.push({ platform: 'instagram', error: instaError.message });
         
         if (!publishToSnapchat) {

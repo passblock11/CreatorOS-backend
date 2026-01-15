@@ -308,6 +308,8 @@ class InstagramService {
   async publishMedia(instagramAccountId, pageAccessToken, containerId) {
     try {
       console.log('📱 [Instagram] Publishing media...');
+      console.log('📱 Instagram Account ID:', instagramAccountId);
+      console.log('📱 Container ID:', containerId);
       
       const response = await axios.post(
         `${this.graphApiUrl}/${instagramAccountId}/media_publish`,
@@ -320,11 +322,19 @@ class InstagramService {
         }
       );
 
+      console.log('📊 [Instagram] Publish response:', JSON.stringify(response.data, null, 2));
+
+      if (!response.data || !response.data.id) {
+        console.error('❌ [Instagram] No media ID in response');
+        throw new Error('Media ID is not available in the response');
+      }
+
       console.log('✅ [Instagram] Media published:', response.data.id);
       
       return response.data.id;
     } catch (error) {
       console.error('❌ [Instagram] Publish error:', error.response?.data || error.message);
+      console.error('❌ [Instagram] Full error:', JSON.stringify(error.response?.data || error, null, 2));
       throw new Error(`Failed to publish media: ${error.response?.data?.error?.message || error.message}`);
     }
   }
@@ -374,7 +384,11 @@ class InstagramService {
       // Step 3: Publish
       const postId = await this.publishMedia(instagramAccountId, pageAccessToken, containerId);
       
-      console.log('🎉 [Instagram] Post published successfully!');
+      if (!postId) {
+        throw new Error('Failed to get post ID from Instagram API');
+      }
+      
+      console.log('🎉 [Instagram] Post published successfully! Post ID:', postId);
       
       return {
         postId,
@@ -383,6 +397,7 @@ class InstagramService {
       };
     } catch (error) {
       console.error('❌ [Instagram] Upload and publish failed:', error.message);
+      console.error('❌ [Instagram] Full error stack:', error.stack);
       throw error;
     }
   }
