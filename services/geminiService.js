@@ -5,7 +5,9 @@ const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 class GeminiService {
   constructor() {
-    this.model = genAI.getGenerativeModel({ model: 'gemini-pro' });
+    // Use gemini-1.5-flash for fast, efficient content generation
+    // Alternative: 'gemini-1.5-pro' for more advanced capabilities
+    this.model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
   }
 
   /**
