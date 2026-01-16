@@ -22,8 +22,8 @@ class InstagramService {
     const params = new URLSearchParams({
       client_id: this.appId,
       redirect_uri: this.redirectUri,
-      // Added business_management scope for Business Manager pages
-      scope: 'instagram_basic,instagram_content_publish,pages_show_list,pages_read_engagement,business_management',
+      // Required scopes for Instagram content publishing and page management
+      scope: 'instagram_basic,instagram_content_publish,pages_show_list,pages_read_engagement,pages_manage_metadata,pages_read_user_content,business_management',
       response_type: 'code',
       state: state
     });
