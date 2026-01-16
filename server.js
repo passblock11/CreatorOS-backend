@@ -31,18 +31,18 @@ app.use(morgan('dev'));
 // Stripe webhook needs raw body
 app.use('/api/stripe/webhook', express.raw({ type: 'application/json' }));
 
-// Apply body parsers to all routes EXCEPT upload routes
+// Apply body parsers to all routes EXCEPT the file upload route
 app.use((req, res, next) => {
-  // Skip body parsing for file upload routes
-  if (req.path.startsWith('/api/upload')) {
+  // Skip body parsing ONLY for the actual file upload endpoint
+  if (req.path === '/api/upload/media') {
     return next();
   }
   express.json()(req, res, next);
 });
 
 app.use((req, res, next) => {
-  // Skip body parsing for file upload routes
-  if (req.path.startsWith('/api/upload')) {
+  // Skip body parsing ONLY for the actual file upload endpoint
+  if (req.path === '/api/upload/media') {
     return next();
   }
   express.urlencoded({ extended: true })(req, res, next);
