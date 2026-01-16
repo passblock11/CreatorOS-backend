@@ -184,6 +184,8 @@ exports.updatePost = async (req, res) => {
 
 exports.deletePost = async (req, res) => {
   try {
+    console.log('🗑️ [Delete] Deleting post:', req.params.id);
+    
     const post = await Post.findOne({
       _id: req.params.id,
       user: req.user._id,
@@ -196,14 +198,46 @@ exports.deletePost = async (req, res) => {
       });
     }
 
+    const user = await User.findById(req.user._id);
+    const deletionResults = {
+      database: false,
+      instagram: null,
+      snapchat: null
+    };
+
+    // Delete from Instagram if published there
+    if (post.instagramPostId && user.instagramAccount?.isConnected) {
+      try {
+        console.log('🗑️ [Instagram] Deleting post from Instagram:', post.instagramPostId);
+        await instagramService.deletePost(post.instagramPostId, user.instagramAccount.accessToken);
+        deletionResults.instagram = 'deleted';
+        console.log('✅ [Instagram] Post deleted from Instagram');
+      } catch (error) {
+        console.error('❌ [Instagram] Failed to delete from Instagram:', error.message);
+        deletionResults.instagram = `failed: ${error.message}`;
+        // Continue with database deletion even if Instagram deletion fails
+      }
+    }
+
+    // Delete from Snapchat if published there
+    // Note: Snapchat API doesn't support post deletion via API
+    if (post.snapchatPostId) {
+      console.log('ℹ️ [Snapchat] Snapchat does not support post deletion via API');
+      deletionResults.snapchat = 'not_supported';
+    }
+
+    // Delete from database
     await post.deleteOne();
+    deletionResults.database = true;
+    console.log('✅ [Delete] Post deleted from database');
 
     res.json({
       success: true,
       message: 'Post deleted successfully',
+      details: deletionResults
     });
   } catch (error) {
-    console.error('Delete post error:', error);
+    console.error('❌ [Delete] Error:', error);
     res.status(500).json({
       success: false,
       message: 'Error deleting post',

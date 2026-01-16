@@ -490,6 +490,8 @@ class InstagramService {
       };
 
       try {
+        console.log('📊 [Instagram] Fetching insights for media:', mediaId);
+        
         const insightsResponse = await axios.get(`${this.graphApiUrl}/${mediaId}/insights`, {
           params: {
             access_token: pageAccessToken,
@@ -497,11 +499,13 @@ class InstagramService {
           }
         });
 
-        console.log('📊 Insights data:', JSON.stringify(insightsResponse.data, null, 2));
+        console.log('📊 [Instagram] Raw insights response:', JSON.stringify(insightsResponse.data, null, 2));
 
         // Parse insights
         if (insightsResponse.data && insightsResponse.data.data) {
           insightsResponse.data.data.forEach(metric => {
+            console.log(`📊 Processing metric: ${metric.name}, value:`, metric.values);
+            
             if (metric.name === 'impressions') {
               insights.impressions = metric.values[0]?.value || 0;
             } else if (metric.name === 'reach') {
@@ -512,11 +516,26 @@ class InstagramService {
               insights.saved = metric.values[0]?.value || 0;
             }
           });
+          
+          console.log('📊 [Instagram] Parsed insights:', insights);
+        } else {
+          console.log('⚠️ [Instagram] No insights data in response');
         }
       } catch (insightError) {
-        console.log('⚠️ [Instagram] Could not fetch insights (may require time or permissions):', insightError.message);
-        // Insights might not be available immediately after posting
-        // Or account might not have permission
+        console.error('⚠️ [Instagram] Insights fetch error details:');
+        console.error('   Status:', insightError.response?.status);
+        console.error('   Message:', insightError.message);
+        console.error('   Response:', JSON.stringify(insightError.response?.data, null, 2));
+        
+        // Check if it's a permissions issue or timing issue
+        if (insightError.response?.status === 400) {
+          console.log('⚠️ [Instagram] Insights not available yet (post may be too new, wait 24-48 hours)');
+        } else if (insightError.response?.status === 403) {
+          console.log('⚠️ [Instagram] Insights permission denied - check pages_read_engagement permission');
+        } else {
+          console.log('⚠️ [Instagram] Could not fetch insights:', insightError.message);
+        }
+        // Continue without insights - likes and comments will still work
       }
 
       const analytics = {
@@ -537,6 +556,32 @@ class InstagramService {
       console.error('❌ [Instagram] Get insights error:', error.response?.data || error.message);
       console.error('❌ Full error:', JSON.stringify(error.response?.data || error, null, 2));
       throw new Error(`Failed to get post insights: ${error.response?.data?.error?.message || error.message}`);
+    }
+  }
+
+  /**
+   * Delete post from Instagram
+   */
+  async deletePost(mediaId, pageAccessToken) {
+    try {
+      console.log('🗑️ [Instagram] Deleting post from Instagram...');
+      console.log('🗑️ Media ID:', mediaId);
+      
+      const response = await axios.delete(`${this.graphApiUrl}/${mediaId}`, {
+        params: {
+          access_token: pageAccessToken
+        }
+      });
+
+      console.log('✅ [Instagram] Post deleted successfully');
+      
+      return {
+        success: true,
+        deletedId: mediaId
+      };
+    } catch (error) {
+      console.error('❌ [Instagram] Delete post error:', error.response?.data || error.message);
+      throw new Error(`Failed to delete post: ${error.response?.data?.error?.message || error.message}`);
     }
   }
 
