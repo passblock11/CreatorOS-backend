@@ -5,9 +5,15 @@ const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 class GeminiService {
   constructor() {
-    // Use gemini-1.5-flash for fast, efficient content generation
-    // Alternative: 'gemini-1.5-pro' for more advanced capabilities
-    this.model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+    // Using gemini-3-flash-preview - Latest model, works with free tier
+    // Free tier limits: 15 requests per minute, 1 million tokens per day
+    this.model = genAI.getGenerativeModel({ 
+      model: 'gemini-3-flash-preview',
+      generationConfig: {
+        maxOutputTokens: 500, // Limit output to save tokens on free tier
+        temperature: 0.9,      // Good balance of creativity
+      },
+    });
   }
 
   /**
@@ -111,9 +117,9 @@ Generate the content now:
         const result = await this.generateContent(title, platform, options);
         variations.push(result);
         
-        // Small delay to avoid rate limiting
+        // Delay to respect free tier rate limits (15 requests/minute)
         if (i < count - 1) {
-          await new Promise(resolve => setTimeout(resolve, 500));
+          await new Promise(resolve => setTimeout(resolve, 4000)); // 4 seconds between requests
         }
       }
 

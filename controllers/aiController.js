@@ -25,6 +25,16 @@ exports.generateContent = async (req, res) => {
     });
   } catch (error) {
     console.error('❌ [AI] Generate content error:', error);
+    
+    // Handle rate limit errors specifically
+    if (error.message.includes('429') || error.message.includes('rate limit')) {
+      return res.status(429).json({
+        success: false,
+        message: 'Rate limit reached. Please wait a few seconds and try again.',
+        error: 'Too many requests',
+      });
+    }
+    
     res.status(500).json({
       success: false,
       message: 'Error generating content',
@@ -65,6 +75,15 @@ exports.generateVariations = async (req, res) => {
     });
   } catch (error) {
     console.error('❌ [AI] Generate variations error:', error);
+    
+    if (error.message.includes('429') || error.message.includes('rate limit')) {
+      return res.status(429).json({
+        success: false,
+        message: 'Rate limit reached. Please wait a minute and try again.',
+        error: 'Too many requests',
+      });
+    }
+    
     res.status(500).json({
       success: false,
       message: 'Error generating variations',
@@ -101,6 +120,15 @@ exports.improveContent = async (req, res) => {
     });
   } catch (error) {
     console.error('❌ [AI] Improve content error:', error);
+    
+    if (error.message.includes('429') || error.message.includes('rate limit')) {
+      return res.status(429).json({
+        success: false,
+        message: 'Rate limit reached. Please wait a few seconds and try again.',
+        error: 'Too many requests',
+      });
+    }
+    
     res.status(500).json({
       success: false,
       message: 'Error improving content',
