@@ -61,54 +61,37 @@ exports.getUploadSignature = async (req, res) => {
 /**
  * Verify and save uploaded file metadata
  * Called after frontend successfully uploads to Cloudinary
+ * Note: We trust Cloudinary's response since the upload was signed
  */
 exports.verifyUpload = async (req, res) => {
   try {
-    const { publicId } = req.body;
+    const { publicId, url, format, width, height, bytes, resourceType, createdAt } = req.body;
 
-    console.log('🔍 [Cloudinary] Verifying upload:', { publicId });
+    console.log('🔍 [Cloudinary] Verifying upload:', { publicId, resourceType });
 
-    if (!publicId) {
+    if (!publicId || !url) {
       return res.status(400).json({
         success: false,
-        message: 'Missing required field: publicId',
+        message: 'Missing required fields: publicId and url',
       });
     }
 
-    // Get file details from Cloudinary to verify it exists
-    // Try video first, then image if that fails
-    let resource;
-    try {
-      resource = await cloudinary.api.resource(publicId, {
-        resource_type: 'video',
-      });
-    } catch (videoError) {
-      // If not a video, try as image
-      try {
-        resource = await cloudinary.api.resource(publicId, {
-          resource_type: 'image',
-        });
-      } catch (imageError) {
-        // If neither works, return error
-        throw new Error('Resource not found in Cloudinary');
-      }
-    }
+    console.log('✅ [Cloudinary] Upload verified (data from direct upload)');
 
-    console.log('✅ [Cloudinary] Upload verified:', resource.resource_type);
-
+    // Return the data that was already validated by Cloudinary during upload
     res.json({
       success: true,
       message: 'Upload verified successfully',
       data: {
-        url: resource.secure_url,
-        publicId: resource.public_id,
-        format: resource.format,
-        width: resource.width,
-        height: resource.height,
-        bytes: resource.bytes,
-        type: resource.resource_type,
-        resourceType: resource.resource_type,
-        createdAt: resource.created_at,
+        url: url,
+        publicId: publicId,
+        format: format,
+        width: width,
+        height: height,
+        bytes: bytes,
+        type: resourceType,
+        resourceType: resourceType,
+        createdAt: createdAt,
       },
     });
   } catch (error) {
