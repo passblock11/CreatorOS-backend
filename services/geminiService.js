@@ -10,8 +10,9 @@ class GeminiService {
     this.model = genAI.getGenerativeModel({ 
       model: 'gemini-3-flash-preview',
       generationConfig: {
-        maxOutputTokens: 500, // Limit output to save tokens on free tier
-        temperature: 0.9,      // Good balance of creativity
+        maxOutputTokens: 1024, // Increased to ensure complete sentences
+        temperature: 0.9,       // Good balance of creativity
+        stopSequences: [],      // Don't stop early
       },
     });
   }
@@ -79,13 +80,20 @@ class GeminiService {
     const guidelines = platformGuidelines[platform] || platformGuidelines.instagram;
 
     const prompt = `
-Create an engaging ${platform} post about: "${title}"
+Write a complete ${platform} post about: "${title}"
 
-Write a ${tone} caption (${guidelines.maxLength}) with ${guidelines.style}.
-${includeEmojis ? 'Use emojis naturally.' : ''}
-${includeHashtags ? `End with ${guidelines.hashtagCount}.` : ''}
+Requirements:
+- Tone: ${tone}
+- Length: ${guidelines.maxLength}
+- Style: ${guidelines.style}
+${includeEmojis ? '- Include relevant emojis' : ''}
+${includeHashtags ? `- Add ${guidelines.hashtagCount} at the end` : ''}
 
-Write ONLY the post content - no explanations, no meta-descriptions, just the actual post text that would be published.
+IMPORTANT: 
+- Write ONLY the actual post content (no explanations or descriptions)
+- Use complete sentences with proper punctuation
+- Make it ready to publish immediately
+- Ensure all sentences are complete and well-formed
 `.trim();
 
     return prompt;
