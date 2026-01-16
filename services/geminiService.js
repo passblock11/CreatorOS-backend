@@ -79,26 +79,13 @@ class GeminiService {
     const guidelines = platformGuidelines[platform] || platformGuidelines.instagram;
 
     const prompt = `
-You are a professional social media content creator. Create engaging ${platform} content based on the following title:
+Create an engaging ${platform} post about: "${title}"
 
-Title: "${title}"
+Write a ${tone} caption (${guidelines.maxLength}) with ${guidelines.style}.
+${includeEmojis ? 'Use emojis naturally.' : ''}
+${includeHashtags ? `End with ${guidelines.hashtagCount}.` : ''}
 
-Requirements:
-- Platform: ${platform.toUpperCase()}
-- Tone: ${tone} (e.g., friendly, professional, humorous, inspirational)
-- Length: ${guidelines.maxLength}
-- Style: ${guidelines.style}
-${includeEmojis ? '- Include relevant emojis to make it engaging' : '- Do not use emojis'}
-${includeHashtags ? `- Add ${guidelines.hashtagCount} at the end` : '- Do not include hashtags'}
-
-Instructions:
-1. Write a compelling caption that captures attention
-2. Make it authentic and relatable
-3. Include a call-to-action if appropriate
-4. Keep the content focused and engaging
-5. Ensure it's optimized for ${platform}
-
-Generate the content now:
+Write ONLY the post content - no explanations, no meta-descriptions, just the actual post text that would be published.
 `.trim();
 
     return prompt;
@@ -148,13 +135,11 @@ Generate the content now:
       };
 
       const prompt = `
-${improvementPrompts[improvementType] || improvementPrompts.general}
+${improvementPrompts[improvementType] || improvementPrompts.general} for ${platform}.
 
-Platform: ${platform.toUpperCase()}
-Current Content:
 "${existingContent}"
 
-Please provide an improved version:
+Write ONLY the improved version - no explanations:
 `.trim();
 
       const result = await this.model.generateContent(prompt);
@@ -178,17 +163,11 @@ Please provide an improved version:
       console.log('🤖 [Gemini] Generating hashtags');
 
       const prompt = `
-Generate ${count} relevant and trending hashtags for the following ${platform} content:
+Generate ${count} relevant hashtags for this ${platform} post:
 
 "${content}"
 
-Requirements:
-- Mix of popular and niche hashtags
-- Relevant to the content
-- Platform-appropriate
-- Include both broad and specific tags
-
-Return only the hashtags, separated by spaces, starting with #:
+Write ONLY the hashtags with # symbols, separated by spaces. No explanations.
 `.trim();
 
       const result = await this.model.generateContent(prompt);
