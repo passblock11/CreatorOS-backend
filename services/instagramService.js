@@ -14,10 +14,16 @@ class InstagramService {
    * Updated to include business management permissions
    */
   getAuthorizationUrl(userId) {
-    const state = Buffer.from(JSON.stringify({
-      userId,
-      timestamp: Date.now()
-    })).toString('base64');
+    console.log('🔐 [Instagram] Generating OAuth URL for user:', userId);
+    
+    const stateData = {
+      userId: userId.toString(),
+      timestamp: Date.now(),
+      nonce: crypto.randomBytes(16).toString('hex') // Add randomness for security
+    };
+    
+    const state = Buffer.from(JSON.stringify(stateData)).toString('base64');
+    console.log('🔐 [Instagram] Generated state (first 20 chars):', state.substring(0, 20));
 
     const params = new URLSearchParams({
       client_id: this.appId,
@@ -28,7 +34,10 @@ class InstagramService {
       state: state
     });
 
-    return `https://www.facebook.com/v18.0/dialog/oauth?${params.toString()}`;
+    const authUrl = `https://www.facebook.com/v18.0/dialog/oauth?${params.toString()}`;
+    console.log('✅ [Instagram] OAuth URL generated');
+    
+    return authUrl;
   }
 
   /**
@@ -564,17 +573,36 @@ class InstagramService {
    */
   validateState(state) {
     try {
+      if (!state) {
+        console.error('❌ [Instagram] No state parameter provided');
+        throw new Error('Missing state parameter');
+      }
+
+      console.log('🔍 [Instagram] Validating state parameter...');
       const decoded = JSON.parse(Buffer.from(state, 'base64').toString());
-      const age = Date.now() - decoded.timestamp;
       
-      // State should be less than 10 minutes old
-      if (age > 600000) {
-        throw new Error('State expired');
+      if (!decoded.userId || !decoded.timestamp) {
+        console.error('❌ [Instagram] Invalid state structure:', decoded);
+        throw new Error('Invalid state structure');
+      }
+
+      const age = Date.now() - decoded.timestamp;
+      console.log('⏰ [Instagram] State age:', Math.round(age / 1000), 'seconds');
+      
+      // State should be less than 30 minutes old (increased from 10)
+      if (age > 1800000) {
+        console.error('❌ [Instagram] State expired. Age:', Math.round(age / 1000), 'seconds');
+        throw new Error('State expired. Please try connecting again.');
       }
       
+      console.log('✅ [Instagram] State validated successfully');
       return decoded;
     } catch (error) {
-      throw new Error('Invalid state parameter');
+      console.error('❌ [Instagram] State validation error:', error.message);
+      if (error.message.includes('expired') || error.message.includes('Missing') || error.message.includes('structure')) {
+        throw error;
+      }
+      throw new Error('Invalid state parameter. Please try connecting again.');
     }
   }
 }
