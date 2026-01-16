@@ -64,36 +64,37 @@ exports.getUploadSignature = async (req, res) => {
  */
 exports.verifyUpload = async (req, res) => {
   try {
-    const { publicId, signature, timestamp } = req.body;
+    const { publicId } = req.body;
 
     console.log('🔍 [Cloudinary] Verifying upload:', { publicId });
 
-    if (!publicId || !signature || !timestamp) {
+    if (!publicId) {
       return res.status(400).json({
         success: false,
-        message: 'Missing required fields: publicId, signature, timestamp',
+        message: 'Missing required field: publicId',
       });
     }
 
-    // Verify signature to ensure upload was legitimate
-    const expectedSignature = cloudinary.utils.api_sign_request(
-      { public_id: publicId, timestamp },
-      process.env.CLOUDINARY_API_SECRET
-    );
-
-    if (signature !== expectedSignature) {
-      return res.status(403).json({
-        success: false,
-        message: 'Invalid signature',
+    // Get file details from Cloudinary to verify it exists
+    // Try video first, then image if that fails
+    let resource;
+    try {
+      resource = await cloudinary.api.resource(publicId, {
+        resource_type: 'video',
       });
+    } catch (videoError) {
+      // If not a video, try as image
+      try {
+        resource = await cloudinary.api.resource(publicId, {
+          resource_type: 'image',
+        });
+      } catch (imageError) {
+        // If neither works, return error
+        throw new Error('Resource not found in Cloudinary');
+      }
     }
 
-    // Get file details from Cloudinary
-    const resource = await cloudinary.api.resource(publicId, {
-      resource_type: 'auto',
-    });
-
-    console.log('✅ [Cloudinary] Upload verified');
+    console.log('✅ [Cloudinary] Upload verified:', resource.resource_type);
 
     res.json({
       success: true,
@@ -106,6 +107,7 @@ exports.verifyUpload = async (req, res) => {
         height: resource.height,
         bytes: resource.bytes,
         type: resource.resource_type,
+        resourceType: resource.resource_type,
         createdAt: resource.created_at,
       },
     });
