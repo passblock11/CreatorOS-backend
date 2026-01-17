@@ -161,27 +161,39 @@ class StripeService {
 
   async handleCheckoutComplete(session) {
     try {
-      console.log('Processing checkout.session.completed');
+      console.log('========================================');
+      console.log('💳 [Stripe] Processing checkout.session.completed');
+      console.log('Session ID:', session.id);
       console.log('Session metadata:', session.metadata);
       console.log('Customer ID:', session.customer);
       console.log('Subscription ID:', session.subscription);
+      console.log('Payment status:', session.payment_status);
 
       const userId = session.metadata.userId;
       const customerId = session.customer;
       const subscriptionId = session.subscription;
 
+      if (!userId) {
+        console.error('❌ No user ID in session metadata');
+        return;
+      }
+
       if (!subscriptionId) {
-        console.error('No subscription ID in checkout session');
+        console.error('❌ No subscription ID in checkout session');
         return;
       }
 
       const subscription = await stripe.subscriptions.retrieve(subscriptionId);
       const priceId = subscription.items.data[0].price.id;
 
-      console.log('Retrieved subscription:', subscription.id);
-      console.log('Price ID:', priceId);
-      console.log('Expected Pro Price ID:', process.env.STRIPE_PRICE_ID_PRO);
-      console.log('Expected Business Price ID:', process.env.STRIPE_PRICE_ID_BUSINESS);
+      console.log('📊 Retrieved subscription details:');
+      console.log('   Subscription ID:', subscription.id);
+      console.log('   Status:', subscription.status);
+      console.log('   Price ID:', priceId);
+      console.log('   Current period end:', new Date(subscription.current_period_end * 1000));
+      console.log('🔍 Expected Price IDs:');
+      console.log('   Pro:', process.env.STRIPE_PRICE_ID_PRO);
+      console.log('   Business:', process.env.STRIPE_PRICE_ID_BUSINESS);
 
       let plan = 'free';
       if (priceId === process.env.STRIPE_PRICE_ID_PRO) {
@@ -190,7 +202,7 @@ class StripeService {
         plan = 'business';
       }
 
-      console.log('Determined plan:', plan);
+      console.log('✅ Determined plan:', plan.toUpperCase());
 
       const updateResult = await User.findByIdAndUpdate(userId, {
         'subscription.plan': plan,
@@ -201,61 +213,105 @@ class StripeService {
       }, { new: true });
 
       if (updateResult) {
-        console.log(`✅ Subscription activated for user ${userId}: ${plan}`);
-        console.log('Updated user subscription:', updateResult.subscription);
+        console.log(`🎉 [Stripe] Subscription activated successfully!`);
+        console.log(`   User ID: ${userId}`);
+        console.log(`   Plan: ${plan.toUpperCase()}`);
+        console.log(`   Status: ${updateResult.subscription.status}`);
+        console.log(`   Period ends: ${updateResult.subscription.currentPeriodEnd}`);
+        console.log('========================================');
       } else {
         console.error(`❌ Failed to find user with ID: ${userId}`);
+        console.error('========================================');
       }
     } catch (error) {
-      console.error('Error in handleCheckoutComplete:', error);
+      console.error('========================================');
+      console.error('❌ [Stripe] Error in handleCheckoutComplete:', error);
+      console.error('========================================');
       throw error;
     }
   }
 
   async handleSubscriptionUpdated(subscription) {
-    const customerId = subscription.customer;
-    const user = await User.findOne({ 'subscription.stripeCustomerId': customerId });
+    try {
+      console.log('========================================');
+      console.log('🔄 [Stripe] Processing customer.subscription.updated');
+      console.log('   Subscription ID:', subscription.id);
+      console.log('   Customer ID:', subscription.customer);
+      console.log('   Status:', subscription.status);
+      console.log('   Cancel at period end:', subscription.cancel_at_period_end);
+      
+      const customerId = subscription.customer;
+      const user = await User.findOne({ 'subscription.stripeCustomerId': customerId });
 
-    if (!user) {
-      console.log(`User not found for customer ${customerId}`);
-      return;
-    }
-
-    // Check if subscription is set to cancel at period end
-    const isCancelling = subscription.cancel_at_period_end === true;
-    const isCancelled = subscription.status === 'canceled' || subscription.status === 'unpaid';
-
-    let plan = 'free';
-    let status = 'cancelled';
-
-    // If subscription is active and NOT set to cancel, determine the plan
-    if (!isCancelling && !isCancelled && subscription.status === 'active') {
-      const priceId = subscription.items.data[0].price.id;
-      if (priceId === process.env.STRIPE_PRICE_ID_PRO) {
-        plan = 'pro';
-      } else if (priceId === process.env.STRIPE_PRICE_ID_BUSINESS) {
-        plan = 'business';
+      if (!user) {
+        console.log(`⚠️ User not found for customer ${customerId}`);
+        console.log('========================================');
+        return;
       }
-      status = 'active';
-    } else if (subscription.status === 'past_due') {
-      // Keep current plan but mark as past_due
-      plan = user.subscription.plan;
-      status = 'past_due';
-    } else {
-      // Cancelled, unpaid, or set to cancel - downgrade to free
-      plan = 'free';
-      status = 'cancelled';
-    }
 
-    await User.findByIdAndUpdate(user._id, {
-      'subscription.plan': plan,
-      'subscription.status': status,
-      'subscription.currentPeriodEnd': new Date(subscription.current_period_end * 1000),
-    });
+      console.log('   Found user:', user._id);
+      console.log('   Current plan:', user.subscription.plan);
 
-    console.log(`Subscription updated for user ${user._id}: ${plan} - ${status}`);
-    if (isCancelling) {
-      console.log(`⚠️ Subscription is set to cancel at period end: ${new Date(subscription.current_period_end * 1000).toISOString()}`);
+      // Check subscription status
+      const isCancelling = subscription.cancel_at_period_end === true;
+      const isCancelled = subscription.status === 'canceled' || subscription.status === 'unpaid';
+      const isActive = subscription.status === 'active';
+      const isPastDue = subscription.status === 'past_due';
+
+      let plan = 'free';
+      let status = 'cancelled';
+
+      // Determine plan and status based on subscription state
+      if (isActive && !isCancelling) {
+        // Active subscription, determine the plan
+        const priceId = subscription.items.data[0].price.id;
+        console.log('   Price ID:', priceId);
+        
+        if (priceId === process.env.STRIPE_PRICE_ID_PRO) {
+          plan = 'pro';
+        } else if (priceId === process.env.STRIPE_PRICE_ID_BUSINESS) {
+          plan = 'business';
+        }
+        status = 'active';
+        console.log('   ✅ Active subscription detected');
+      } else if (isActive && isCancelling) {
+        // Active but set to cancel - keep plan until period end
+        const priceId = subscription.items.data[0].price.id;
+        if (priceId === process.env.STRIPE_PRICE_ID_PRO) {
+          plan = 'pro';
+        } else if (priceId === process.env.STRIPE_PRICE_ID_BUSINESS) {
+          plan = 'business';
+        }
+        status = 'active';
+        console.log('   ⚠️ Subscription set to cancel at period end, keeping plan active until then');
+      } else if (isPastDue) {
+        // Payment failed but still grace period - keep current plan
+        plan = user.subscription.plan;
+        status = 'past_due';
+        console.log('   ⚠️ Payment past due, keeping current plan in grace period');
+      } else if (isCancelled) {
+        // Cancelled or unpaid - downgrade to free
+        plan = 'free';
+        status = 'cancelled';
+        console.log('   ❌ Subscription cancelled or unpaid, downgrading to free');
+      }
+
+      await User.findByIdAndUpdate(user._id, {
+        'subscription.plan': plan,
+        'subscription.status': status,
+        'subscription.stripeSubscriptionId': subscription.id,
+        'subscription.currentPeriodEnd': new Date(subscription.current_period_end * 1000),
+      });
+
+      console.log(`✅ [Stripe] Subscription updated for user ${user._id}`);
+      console.log(`   New plan: ${plan.toUpperCase()}`);
+      console.log(`   New status: ${status}`);
+      console.log(`   Period ends: ${new Date(subscription.current_period_end * 1000).toISOString()}`);
+      console.log('========================================');
+    } catch (error) {
+      console.error('========================================');
+      console.error('❌ [Stripe] Error in handleSubscriptionUpdated:', error);
+      console.error('========================================');
     }
   }
 

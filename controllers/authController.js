@@ -231,64 +231,135 @@ exports.resetMonthlyUsage = async (req, res) => {
 exports.fixSubscription = async (req, res) => {
   try {
     const user = await User.findById(req.user._id);
+    const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
     
     console.log(`🔧 [Fix Subscription] Checking subscription for user ${user._id}`);
     console.log(`   Current plan: ${user.subscription.plan}`);
     console.log(`   Current status: ${user.subscription.status}`);
+    console.log(`   Stripe customer ID: ${user.subscription.stripeCustomerId}`);
     console.log(`   Stripe subscription ID: ${user.subscription.stripeSubscriptionId}`);
     
-    // If user has no active Stripe subscription, downgrade to free
-    if (!user.subscription.stripeSubscriptionId || user.subscription.status === 'cancelled') {
-      console.log(`⚠️ No active Stripe subscription, downgrading to free`);
+    // If no Stripe customer ID, definitely free
+    if (!user.subscription.stripeCustomerId) {
+      console.log(`⚠️ No Stripe customer ID, setting to free`);
       user.subscription.plan = 'free';
       user.subscription.status = 'active';
       await user.save();
       
       return res.json({
         success: true,
-        message: 'Subscription fixed: downgraded to free plan',
+        message: 'No Stripe account found. Plan set to FREE.',
         subscription: user.subscription,
       });
     }
     
-    // Otherwise, fetch from Stripe to verify
-    const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+    // Fetch all subscriptions for this customer from Stripe
     try {
-      const subscription = await stripe.subscriptions.retrieve(user.subscription.stripeSubscriptionId);
+      const subscriptions = await stripe.subscriptions.list({
+        customer: user.subscription.stripeCustomerId,
+        status: 'all',
+        limit: 10,
+      });
       
-      console.log(`📊 Stripe subscription status: ${subscription.status}`);
-      console.log(`   Cancel at period end: ${subscription.cancel_at_period_end}`);
+      console.log(`📊 Found ${subscriptions.data.length} subscriptions in Stripe`);
       
-      if (subscription.status === 'canceled' || subscription.cancel_at_period_end) {
-        user.subscription.plan = 'free';
-        user.subscription.status = 'cancelled';
-        user.subscription.stripeSubscriptionId = null;
+      // Find active subscription
+      const activeSubscription = subscriptions.data.find(sub => 
+        sub.status === 'active' && !sub.cancel_at_period_end
+      );
+      
+      if (activeSubscription) {
+        // We have an active subscription!
+        const priceId = activeSubscription.items.data[0].price.id;
+        
+        let plan = 'free';
+        if (priceId === process.env.STRIPE_PRICE_ID_PRO) {
+          plan = 'pro';
+        } else if (priceId === process.env.STRIPE_PRICE_ID_BUSINESS) {
+          plan = 'business';
+        }
+        
+        console.log(`✅ Active subscription found!`);
+        console.log(`   Subscription ID: ${activeSubscription.id}`);
+        console.log(`   Price ID: ${priceId}`);
+        console.log(`   Determined plan: ${plan}`);
+        console.log(`   Status: ${activeSubscription.status}`);
+        
+        user.subscription.plan = plan;
+        user.subscription.status = 'active';
+        user.subscription.stripeSubscriptionId = activeSubscription.id;
+        user.subscription.currentPeriodEnd = new Date(activeSubscription.current_period_end * 1000);
         await user.save();
         
         return res.json({
           success: true,
-          message: 'Subscription fixed: cancelled subscription detected, downgraded to free',
+          message: `Subscription synced! You are on the ${plan.toUpperCase()} plan.`,
           subscription: user.subscription,
+          stripeData: {
+            subscriptionId: activeSubscription.id,
+            status: activeSubscription.status,
+            currentPeriodEnd: new Date(activeSubscription.current_period_end * 1000),
+          },
         });
       }
       
-      res.json({
-        success: true,
-        message: 'Subscription is valid and active',
-        subscription: user.subscription,
-      });
-    } catch (stripeError) {
-      console.log(`⚠️ Could not fetch Stripe subscription: ${stripeError.message}`);
-      console.log(`   Downgrading to free as a safety measure`);
+      // Check if there's a subscription set to cancel at period end (still active until then)
+      const cancellingSubscription = subscriptions.data.find(sub => 
+        sub.status === 'active' && sub.cancel_at_period_end === true
+      );
       
+      if (cancellingSubscription) {
+        const priceId = cancellingSubscription.items.data[0].price.id;
+        let plan = 'free';
+        if (priceId === process.env.STRIPE_PRICE_ID_PRO) {
+          plan = 'pro';
+        } else if (priceId === process.env.STRIPE_PRICE_ID_BUSINESS) {
+          plan = 'business';
+        }
+        
+        console.log(`⚠️ Subscription cancelling at period end`);
+        console.log(`   Still active until: ${new Date(cancellingSubscription.current_period_end * 1000)}`);
+        
+        const now = new Date();
+        const periodEnd = new Date(cancellingSubscription.current_period_end * 1000);
+        
+        if (now < periodEnd) {
+          // Still active, keep the plan
+          user.subscription.plan = plan;
+          user.subscription.status = 'active';
+          user.subscription.stripeSubscriptionId = cancellingSubscription.id;
+          user.subscription.currentPeriodEnd = periodEnd;
+          await user.save();
+          
+          return res.json({
+            success: true,
+            message: `Subscription active until ${periodEnd.toLocaleDateString()}. Plan: ${plan.toUpperCase()}`,
+            subscription: user.subscription,
+            note: 'Subscription will cancel at period end',
+          });
+        }
+      }
+      
+      // No active subscription found
+      console.log(`❌ No active subscription found in Stripe`);
       user.subscription.plan = 'free';
       user.subscription.status = 'cancelled';
       user.subscription.stripeSubscriptionId = null;
       await user.save();
       
-      res.json({
+      return res.json({
         success: true,
-        message: 'Subscription fixed: invalid Stripe subscription, downgraded to free',
+        message: 'No active subscription found in Stripe. Plan set to FREE.',
+        subscription: user.subscription,
+      });
+      
+    } catch (stripeError) {
+      console.error(`⚠️ Stripe API error: ${stripeError.message}`);
+      
+      // If we can't reach Stripe, keep current state but warn user
+      return res.json({
+        success: false,
+        message: `Could not verify with Stripe: ${stripeError.message}. Current plan unchanged.`,
         subscription: user.subscription,
       });
     }
