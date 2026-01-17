@@ -2,6 +2,7 @@ const Post = require('../models/Post');
 const User = require('../models/User');
 const snapchatPublicProfileService = require('../services/snapchatPublicProfileService');
 const instagramService = require('../services/instagramService');
+const youtubeService = require('../services/youtubeService');
 const { ensureValidToken: ensureValidSnapchatToken } = require('./snapchatController');
 const { ensureValidToken: ensureValidInstagramToken } = require('./instagramController');
 const { body, validationResult } = require('express-validator');
@@ -294,8 +295,9 @@ exports.publishPost = async (req, res) => {
 
     // Check platform connections
     const platform = post.platform || 'snapchat';
-    const publishToSnapchat = platform === 'snapchat' || platform === 'both';
-    const publishToInstagram = platform === 'instagram' || platform === 'both';
+    const publishToSnapchat = ['snapchat', 'snapchat_instagram', 'snapchat_youtube', 'all'].includes(platform);
+    const publishToInstagram = ['instagram', 'snapchat_instagram', 'instagram_youtube', 'all'].includes(platform);
+    const publishToYouTube = ['youtube', 'snapchat_youtube', 'instagram_youtube', 'all'].includes(platform);
 
     if (publishToSnapchat && !user.snapchatAccount.isConnected) {
       console.log('❌ Snapchat account not connected');
@@ -310,6 +312,23 @@ exports.publishPost = async (req, res) => {
       return res.status(400).json({
         success: false,
         message: 'Please connect your Instagram account first',
+      });
+    }
+
+    if (publishToYouTube && !user.youtubeAccount.isConnected) {
+      console.log('❌ YouTube account not connected');
+      return res.status(400).json({
+        success: false,
+        message: 'Please connect your YouTube account first',
+      });
+    }
+
+    // YouTube validation: only videos allowed
+    if (publishToYouTube && post.mediaType !== 'video') {
+      console.log('❌ YouTube requires video media');
+      return res.status(400).json({
+        success: false,
+        message: 'YouTube only supports video content. Please upload a video.',
       });
     }
 
@@ -337,6 +356,7 @@ exports.publishPost = async (req, res) => {
     const results = {
       snapchat: null,
       instagram: null,
+      youtube: null,
       errors: [],
     };
 
@@ -445,16 +465,78 @@ exports.publishPost = async (req, res) => {
       }
     }
 
+    // Publish to YouTube
+    if (publishToYouTube) {
+      try {
+        console.log('🎥 Publishing to YouTube...');
+        
+        // Check if token needs refresh
+        const now = new Date();
+        const expiresAt = new Date(user.youtubeAccount.expiresAt);
+        if (expiresAt <= now && user.youtubeAccount.refreshToken) {
+          console.log('🔄 Refreshing YouTube token...');
+          const newTokens = await youtubeService.refreshAccessToken(user.youtubeAccount.refreshToken);
+          user.youtubeAccount.accessToken = newTokens.access_token;
+          const newExpiresAt = new Date();
+          newExpiresAt.setSeconds(newExpiresAt.getSeconds() + (newTokens.expires_in || 3600));
+          user.youtubeAccount.expiresAt = newExpiresAt;
+          if (newTokens.refresh_token) {
+            user.youtubeAccount.refreshToken = newTokens.refresh_token;
+          }
+          await user.save();
+        }
+        
+        // Extract hashtags from content for YouTube tags
+        const hashtagRegex = /#\w+/g;
+        const hashtags = post.content.match(hashtagRegex) || [];
+        const tags = hashtags.map(tag => tag.substring(1)); // Remove # symbol
+        
+        const youtubeResult = await youtubeService.uploadVideo(user.youtubeAccount.accessToken, {
+          videoUrl: post.mediaUrl,
+          title: post.title,
+          description: post.content,
+          tags: tags.slice(0, 15), // YouTube allows max 15 tags
+          privacyStatus: 'public', // Can be 'public', 'private', or 'unlisted'
+        });
+
+        post.youtubeVideoId = youtubeResult.videoId;
+        results.youtube = { success: true, videoId: youtubeResult.videoId, videoUrl: youtubeResult.videoUrl };
+        
+        console.log('✅ Published to YouTube successfully:', youtubeResult.videoUrl);
+      } catch (youtubeError) {
+        console.error('❌ YouTube publish error:', youtubeError.message);
+        results.errors.push({ platform: 'youtube', error: youtubeError.message });
+        
+        if (!publishToSnapchat && !publishToInstagram) {
+          // If only publishing to YouTube and it failed, mark as failed
+          post.status = 'failed';
+          post.error = {
+            message: youtubeError.message,
+            code: 'YOUTUBE_ERROR',
+            timestamp: new Date(),
+          };
+          await post.save();
+          
+          return res.status(500).json({
+            success: false,
+            message: 'Failed to publish to YouTube',
+            error: youtubeError.message,
+          });
+        }
+      }
+    }
+
     // Determine final status
     const snapchatSuccess = !publishToSnapchat || results.snapchat?.success;
     const instagramSuccess = !publishToInstagram || results.instagram?.success;
+    const youtubeSuccess = !publishToYouTube || results.youtube?.success;
     
-    if (snapchatSuccess && instagramSuccess) {
+    if (snapchatSuccess && instagramSuccess && youtubeSuccess) {
       post.status = 'published';
       post.publishedAt = new Date();
       user.usage.postsThisMonth += 1;
       console.log('✅ Post published successfully to all platforms');
-    } else if (snapchatSuccess || instagramSuccess) {
+    } else if (snapchatSuccess || instagramSuccess || youtubeSuccess) {
       post.status = 'published';
       post.publishedAt = new Date();
       user.usage.postsThisMonth += 1;
@@ -476,12 +558,18 @@ exports.publishPost = async (req, res) => {
     console.log('📊 PUBLISH RESULTS:');
     console.log('Snapchat:', results.snapchat || 'N/A');
     console.log('Instagram:', results.instagram || 'N/A');
+    console.log('YouTube:', results.youtube || 'N/A');
     console.log('Errors:', results.errors.length > 0 ? results.errors : 'None');
     console.log('========================================');
 
-    const successMessage = platform === 'both' 
-      ? 'Post published successfully'
-      : `Post published to ${platform} successfully`;
+    // Build platform list for message
+    const platforms = [];
+    if (publishToSnapchat) platforms.push('Snapchat');
+    if (publishToInstagram) platforms.push('Instagram');
+    if (publishToYouTube) platforms.push('YouTube');
+    const platformList = platforms.join(' & ');
+    
+    const successMessage = `Post published successfully to ${platformList}`;
 
     res.json({
       success: true,
@@ -492,6 +580,7 @@ exports.publishPost = async (req, res) => {
       results: {
         snapchat: results.snapchat,
         instagram: results.instagram,
+        youtube: results.youtube,
         errors: results.errors,
       },
     });

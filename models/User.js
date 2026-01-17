@@ -65,6 +65,18 @@ const userSchema = new mongoose.Schema({
     pageId: String,
     pageName: String,
   },
+  youtubeAccount: {
+    isConnected: {
+      type: Boolean,
+      default: false,
+    },
+    accessToken: String,
+    refreshToken: String,
+    expiresAt: Date,
+    channelId: String,
+    channelTitle: String,
+    thumbnailUrl: String,
+  },
   usage: {
     postsThisMonth: {
       type: Number,

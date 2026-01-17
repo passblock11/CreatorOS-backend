@@ -26,7 +26,7 @@ const postSchema = new mongoose.Schema({
   },
   platform: {
     type: String,
-    enum: ['snapchat', 'instagram', 'both'],
+    enum: ['snapchat', 'instagram', 'youtube', 'snapchat_instagram', 'snapchat_youtube', 'instagram_youtube', 'all'],
     default: 'snapchat',
   },
   status: {
@@ -44,6 +44,9 @@ const postSchema = new mongoose.Schema({
     type: String,
   },
   instagramPostId: {
+    type: String,
+  },
+  youtubeVideoId: {
     type: String,
   },
   analytics: {
@@ -83,6 +86,25 @@ const postSchema = new mongoose.Schema({
         default: 0,
       },
       engagement: {
+        type: Number,
+        default: 0,
+      },
+    },
+    // YouTube analytics
+    youtube: {
+      views: {
+        type: Number,
+        default: 0,
+      },
+      likes: {
+        type: Number,
+        default: 0,
+      },
+      comments: {
+        type: Number,
+        default: 0,
+      },
+      watchTime: {
         type: Number,
         default: 0,
       },
