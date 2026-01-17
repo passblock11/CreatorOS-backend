@@ -212,6 +212,73 @@ exports.deleteVideo = async (accessToken, videoId) => {
 };
 
 /**
+ * Get video analytics/statistics
+ */
+exports.getVideoAnalytics = async (accessToken, videoId) => {
+  try {
+    oauth2Client.setCredentials({
+      access_token: accessToken,
+    });
+
+    const response = await youtube.videos.list({
+      part: 'statistics,contentDetails',
+      id: videoId,
+    });
+
+    if (!response.data.items || response.data.items.length === 0) {
+      throw new Error('Video not found');
+    }
+
+    const video = response.data.items[0];
+    const stats = video.statistics;
+    const duration = video.contentDetails.duration;
+
+    // Parse ISO 8601 duration to seconds
+    const durationMatch = duration.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
+    const hours = parseInt(durationMatch[1] || 0);
+    const minutes = parseInt(durationMatch[2] || 0);
+    const seconds = parseInt(durationMatch[3] || 0);
+    const totalSeconds = hours * 3600 + minutes * 60 + seconds;
+
+    return {
+      views: parseInt(stats.viewCount || 0),
+      likes: parseInt(stats.likeCount || 0),
+      comments: parseInt(stats.commentCount || 0),
+      durationSeconds: totalSeconds,
+    };
+  } catch (error) {
+    console.error('Error getting video analytics:', error);
+    throw new Error('Failed to get video analytics');
+  }
+};
+
+/**
+ * Upload custom thumbnail for video
+ */
+exports.uploadThumbnail = async (accessToken, videoId, thumbnailBuffer) => {
+  try {
+    oauth2Client.setCredentials({
+      access_token: accessToken,
+    });
+
+    const response = await youtube.thumbnails.set({
+      videoId: videoId,
+      media: {
+        body: thumbnailBuffer,
+      },
+    });
+
+    console.log('✅ [YouTube] Thumbnail uploaded successfully');
+    return {
+      thumbnailUrl: response.data.items[0].default.url,
+    };
+  } catch (error) {
+    console.error('Error uploading thumbnail:', error);
+    throw new Error('Failed to upload thumbnail to YouTube');
+  }
+};
+
+/**
  * Check if token is valid
  */
 exports.validateToken = async (accessToken) => {

@@ -266,4 +266,168 @@ exports.uploadVideo = async (req, res) => {
   }
 };
 
+/**
+ * Sync YouTube video analytics
+ */
+exports.syncAnalytics = async (req, res) => {
+  try {
+    const { postId } = req.params;
+    const Post = require('../models/Post');
+
+    const post = await Post.findOne({
+      _id: postId,
+      user: req.user._id,
+    });
+
+    if (!post) {
+      return res.status(404).json({
+        success: false,
+        message: 'Post not found',
+      });
+    }
+
+    if (!post.youtubeVideoId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Post not published to YouTube',
+      });
+    }
+
+    const user = await User.findById(req.user._id);
+
+    if (!user.youtubeAccount?.isConnected) {
+      return res.status(400).json({
+        success: false,
+        message: 'YouTube account not connected',
+      });
+    }
+
+    // Check if token needs refresh
+    const now = new Date();
+    const expiresAt = new Date(user.youtubeAccount.expiresAt);
+    if (expiresAt <= now && user.youtubeAccount.refreshToken) {
+      const newTokens = await youtubeService.refreshAccessToken(user.youtubeAccount.refreshToken);
+      user.youtubeAccount.accessToken = newTokens.access_token;
+      const newExpiresAt = new Date();
+      newExpiresAt.setSeconds(newExpiresAt.getSeconds() + (newTokens.expires_in || 3600));
+      user.youtubeAccount.expiresAt = newExpiresAt;
+      if (newTokens.refresh_token) {
+        user.youtubeAccount.refreshToken = newTokens.refresh_token;
+      }
+      await user.save();
+    }
+
+    // Fetch analytics from YouTube
+    const analytics = await youtubeService.getVideoAnalytics(
+      user.youtubeAccount.accessToken,
+      post.youtubeVideoId
+    );
+
+    // Update post with analytics
+    post.analytics = post.analytics || {};
+    post.analytics.youtube = {
+      views: analytics.views,
+      likes: analytics.likes,
+      comments: analytics.comments,
+      watchTime: analytics.durationSeconds * analytics.views, // Approximate
+    };
+    post.analytics.lastSynced = new Date();
+
+    await post.save();
+
+    res.json({
+      success: true,
+      message: 'YouTube analytics synced successfully',
+      analytics: post.analytics.youtube,
+    });
+  } catch (error) {
+    console.error('YouTube analytics sync error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error syncing YouTube analytics',
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * Upload custom thumbnail for YouTube video
+ */
+exports.uploadThumbnail = async (req, res) => {
+  try {
+    const { postId } = req.params;
+    const Post = require('../models/Post');
+
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: 'Thumbnail image is required',
+      });
+    }
+
+    const post = await Post.findOne({
+      _id: postId,
+      user: req.user._id,
+    });
+
+    if (!post) {
+      return res.status(404).json({
+        success: false,
+        message: 'Post not found',
+      });
+    }
+
+    if (!post.youtubeVideoId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Post not published to YouTube',
+      });
+    }
+
+    const user = await User.findById(req.user._id);
+
+    if (!user.youtubeAccount?.isConnected) {
+      return res.status(400).json({
+        success: false,
+        message: 'YouTube account not connected',
+      });
+    }
+
+    // Check if token needs refresh
+    const now = new Date();
+    const expiresAt = new Date(user.youtubeAccount.expiresAt);
+    if (expiresAt <= now && user.youtubeAccount.refreshToken) {
+      const newTokens = await youtubeService.refreshAccessToken(user.youtubeAccount.refreshToken);
+      user.youtubeAccount.accessToken = newTokens.access_token;
+      const newExpiresAt = new Date();
+      newExpiresAt.setSeconds(newExpiresAt.getSeconds() + (newTokens.expires_in || 3600));
+      user.youtubeAccount.expiresAt = newExpiresAt;
+      if (newTokens.refresh_token) {
+        user.youtubeAccount.refreshToken = newTokens.refresh_token;
+      }
+      await user.save();
+    }
+
+    // Upload thumbnail to YouTube
+    const result = await youtubeService.uploadThumbnail(
+      user.youtubeAccount.accessToken,
+      post.youtubeVideoId,
+      req.file.buffer
+    );
+
+    res.json({
+      success: true,
+      message: 'Thumbnail uploaded successfully',
+      thumbnailUrl: result.thumbnailUrl,
+    });
+  } catch (error) {
+    console.error('YouTube thumbnail upload error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error uploading thumbnail',
+      error: error.message,
+    });
+  }
+};
+
 module.exports = exports;
