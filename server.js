@@ -16,6 +16,7 @@ const adminRoutes = require('./routes/admin');
 const uploadRoutes = require('./routes/upload');
 const aiRoutes = require('./routes/ai');
 const mediaLibraryRoutes = require('./routes/mediaLibrary');
+const testRoutes = require('./routes/test');
 
 const app = express();
 
@@ -69,6 +70,7 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/upload', uploadRoutes);
 app.use('/api/ai', aiRoutes);
 app.use('/api/media-library', mediaLibraryRoutes);
+app.use('/api/test', testRoutes);
 
 app.use((req, res) => {
   res.status(404).json({
