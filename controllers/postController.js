@@ -677,10 +677,29 @@ exports.getAnalytics = async (req, res) => {
       .sort({ publishedAt: -1 })
       .limit(10);
 
-    const totalViews = recentPosts.reduce((sum, post) => sum + post.analytics.views, 0);
-    const totalImpressions = recentPosts.reduce((sum, post) => sum + post.analytics.impressions, 0);
+    // Calculate total views from both Snapchat and Instagram
+    const totalViews = recentPosts.reduce((sum, post) => {
+      const snapchatViews = post.analytics?.views || 0;
+      const instagramImpressions = post.analytics?.instagram?.impressions || 0;
+      return sum + snapchatViews + instagramImpressions;
+    }, 0);
+    
+    const totalImpressions = recentPosts.reduce((sum, post) => {
+      const snapchatImpressions = post.analytics?.impressions || 0;
+      const instagramImpressions = post.analytics?.instagram?.impressions || 0;
+      return sum + snapchatImpressions + instagramImpressions;
+    }, 0);
+    
+    const totalReach = recentPosts.reduce((sum, post) => {
+      const snapchatReach = post.analytics?.reach || 0;
+      const instagramReach = post.analytics?.instagram?.reach || 0;
+      return sum + snapchatReach + instagramReach;
+    }, 0);
+    
     const totalInstagramLikes = recentPosts.reduce((sum, post) => sum + (post.analytics.instagram?.likes || 0), 0);
     const totalInstagramComments = recentPosts.reduce((sum, post) => sum + (post.analytics.instagram?.comments || 0), 0);
+    const totalInstagramSaves = recentPosts.reduce((sum, post) => sum + (post.analytics.instagram?.saves || 0), 0);
+    const totalInstagramEngagement = recentPosts.reduce((sum, post) => sum + (post.analytics.instagram?.engagement || 0), 0);
 
     const user = await User.findById(req.user._id);
 
@@ -693,8 +712,11 @@ exports.getAnalytics = async (req, res) => {
         draftPosts,
         totalViews,
         totalImpressions,
+        totalReach,
         totalInstagramLikes,
         totalInstagramComments,
+        totalInstagramSaves,
+        totalInstagramEngagement,
         postsThisMonth: user.usage.postsThisMonth,
         planLimits: user.getPlanLimits(),
       },
