@@ -5,15 +5,5 @@
       "source": "/(.*)",
       "destination": "/api"
     }
-  ],
-  "crons": [
-    {
-      "path": "/api/posts/cron/publish-scheduled",
-      "schedule": "*/5 * * * *"
-    },
-    {
-      "path": "/api/posts/cron/sync-analytics",
-      "schedule": "0 */6 * * *"
-    }
   ]
 }
