@@ -37,11 +37,22 @@ const protect = async (req, res, next) => {
         now.getFullYear() !== lastReset.getFullYear();
 
       if (needsReset) {
-        console.log(`🔄 [Usage Reset] Resetting monthly usage for user ${req.user._id}`);
-        req.user.usage.postsThisMonth = 0;
+        console.log(`🔄 [Usage Reset] Recalculating monthly usage for user ${req.user._id}`);
+        
+        // Calculate actual posts from this month from database
+        const Post = require('../models/Post');
+        const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+        const postsThisMonth = await Post.countDocuments({
+          user: req.user._id,
+          status: 'published',
+          publishedAt: { $gte: startOfMonth }
+        });
+        
+        console.log(`   Found ${postsThisMonth} published posts this month`);
+        req.user.usage.postsThisMonth = postsThisMonth;
         req.user.usage.lastResetDate = now;
         await req.user.save();
-        console.log(`✅ [Usage Reset] Counter reset to 0`);
+        console.log(`✅ [Usage Reset] Counter recalculated to ${postsThisMonth}`);
       }
 
       next();

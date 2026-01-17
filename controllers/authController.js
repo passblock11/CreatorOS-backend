@@ -193,19 +193,29 @@ exports.updateProfile = async (req, res) => {
 exports.resetMonthlyUsage = async (req, res) => {
   try {
     const user = await User.findById(req.user._id);
+    const Post = require('../models/Post');
     
-    console.log(`🔄 [Manual Reset] Resetting usage for user ${user._id}`);
+    console.log(`🔄 [Manual Reset] Recalculating usage for user ${user._id}`);
     console.log(`   Old counter: ${user.usage.postsThisMonth}`);
     
-    user.usage.postsThisMonth = 0;
-    user.usage.lastResetDate = new Date();
+    // Calculate actual posts from this month from database
+    const now = new Date();
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const postsThisMonth = await Post.countDocuments({
+      user: user._id,
+      status: 'published',
+      publishedAt: { $gte: startOfMonth }
+    });
+    
+    user.usage.postsThisMonth = postsThisMonth;
+    user.usage.lastResetDate = now;
     await user.save();
     
-    console.log(`✅ [Manual Reset] Counter reset to 0`);
+    console.log(`✅ [Manual Reset] Counter recalculated to ${postsThisMonth}`);
 
     res.json({
       success: true,
-      message: 'Monthly usage reset successfully',
+      message: `Monthly usage recalculated: ${postsThisMonth} posts this month`,
       usage: user.usage,
     });
   } catch (error) {
