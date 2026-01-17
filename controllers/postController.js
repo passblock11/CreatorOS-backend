@@ -596,9 +596,11 @@ exports.autoSyncAllAnalytics = async (req, res) => {
   try {
     console.log('🔄 [Analytics] Starting batch analytics sync...');
 
-    // Verify cron secret for security
+    // Verify cron secret or Vercel Cron header for security
     const cronSecret = req.headers['x-cron-secret'] || req.query.secret;
-    if (cronSecret !== process.env.CRON_SECRET) {
+    const isVercelCron = req.headers['x-vercel-cron'] === '1';
+    
+    if (!isVercelCron && cronSecret !== process.env.CRON_SECRET) {
       return res.status(401).json({
         success: false,
         message: 'Unauthorized',
@@ -661,6 +663,200 @@ exports.autoSyncAllAnalytics = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Error in batch analytics sync',
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * Auto-publish scheduled posts (Cron job endpoint)
+ * Checks for posts with scheduledFor <= now and publishes them
+ */
+exports.autoPublishScheduledPosts = async (req, res) => {
+  try {
+    console.log('🕐 [Scheduler] Starting scheduled posts check...');
+
+    // Verify cron secret or Vercel Cron header for security
+    const cronSecret = req.headers['x-cron-secret'] || req.query.secret;
+    const isVercelCron = req.headers['x-vercel-cron'] === '1';
+    
+    if (!isVercelCron && cronSecret !== process.env.CRON_SECRET) {
+      return res.status(401).json({
+        success: false,
+        message: 'Unauthorized',
+      });
+    }
+
+    const now = new Date();
+    
+    // Find all scheduled posts that are due to be published
+    const scheduledPosts = await Post.find({
+      status: 'scheduled',
+      scheduledFor: { $lte: now },
+    }).populate('user');
+
+    console.log(`📋 [Scheduler] Found ${scheduledPosts.length} posts to publish`);
+
+    const results = {
+      total: scheduledPosts.length,
+      published: 0,
+      failed: 0,
+      errors: [],
+    };
+
+    // Publish each scheduled post
+    for (const post of scheduledPosts) {
+      try {
+        if (!post.user) {
+          console.log(`⚠️ Post ${post._id} has no user, skipping`);
+          results.failed++;
+          continue;
+        }
+
+        console.log(`📤 [Scheduler] Publishing post ${post._id}: "${post.title}"`);
+
+        const user = post.user;
+        
+        // Check platform connections
+        const platform = post.platform || 'snapchat';
+        const publishToSnapchat = platform === 'snapchat' || platform === 'both';
+        const publishToInstagram = platform === 'instagram' || platform === 'both';
+
+        if (publishToSnapchat && !user.snapchatAccount.isConnected) {
+          throw new Error('Snapchat account not connected');
+        }
+
+        if (publishToInstagram && !user.instagramAccount.isConnected) {
+          throw new Error('Instagram account not connected');
+        }
+
+        // Check plan limits
+        const limits = user.getPlanLimits();
+        if (limits.postsPerMonth !== -1 && user.usage.postsThisMonth >= limits.postsPerMonth) {
+          throw new Error(`Monthly post limit reached (${limits.postsPerMonth})`);
+        }
+
+        // Validate media requirement
+        if (!post.mediaUrl) {
+          throw new Error('Media required for publishing');
+        }
+
+        const publishResults = {
+          snapchat: null,
+          instagram: null,
+        };
+
+        // Publish to Snapchat
+        if (publishToSnapchat) {
+          try {
+            const snapchatToken = await ensureValidSnapchatToken(user);
+            const snapResult = await snapchatPublicProfileService.postToPublicProfile(
+              snapchatToken,
+              {
+                title: post.title,
+                headline: post.content?.substring(0, 255) || post.title,
+                mediaUrl: post.mediaUrl,
+                mediaType: post.mediaType || 'image',
+              },
+              user._id
+            );
+
+            const snapPostId = snapResult?.data?.id || snapResult?.id || 'published';
+            post.snapchatPostId = snapPostId;
+            publishResults.snapchat = { success: true, postId: snapPostId };
+            console.log(`✅ [Scheduler] Published to Snapchat: ${snapPostId}`);
+          } catch (snapError) {
+            console.error(`❌ [Scheduler] Snapchat error:`, snapError.message);
+            publishResults.snapchat = { success: false, error: snapError.message };
+            if (!publishToInstagram) {
+              throw snapError;
+            }
+          }
+        }
+
+        // Publish to Instagram
+        if (publishToInstagram) {
+          try {
+            const instagramAccount = await ensureValidInstagramToken(user);
+            const instaResult = await instagramService.uploadAndPublish(
+              instagramAccount.userId,
+              instagramAccount.accessToken,
+              post.mediaUrl,
+              `${post.title}\n\n${post.content}`,
+              post.mediaType === 'video' ? 'VIDEO' : 'IMAGE'
+            );
+
+            if (!instaResult || !instaResult.postId) {
+              throw new Error('No post ID returned from Instagram');
+            }
+
+            post.instagramPostId = instaResult.postId;
+            publishResults.instagram = { success: true, postId: instaResult.postId };
+            console.log(`✅ [Scheduler] Published to Instagram: ${instaResult.postId}`);
+          } catch (instaError) {
+            console.error(`❌ [Scheduler] Instagram error:`, instaError.message);
+            publishResults.instagram = { success: false, error: instaError.message };
+            if (!publishToSnapchat) {
+              throw instaError;
+            }
+          }
+        }
+
+        // Update post status
+        const snapchatSuccess = !publishToSnapchat || publishResults.snapchat?.success;
+        const instagramSuccess = !publishToInstagram || publishResults.instagram?.success;
+
+        if (snapchatSuccess || instagramSuccess) {
+          post.status = 'published';
+          post.publishedAt = new Date();
+          user.usage.postsThisMonth += 1;
+          await user.save();
+          results.published++;
+          console.log(`✅ [Scheduler] Post ${post._id} published successfully`);
+        } else {
+          post.status = 'failed';
+          post.error = {
+            message: 'Failed to publish to all platforms',
+            code: 'SCHEDULER_PUBLISH_FAILED',
+            timestamp: new Date(),
+          };
+          results.failed++;
+          console.log(`❌ [Scheduler] Post ${post._id} failed to publish`);
+        }
+
+        await post.save();
+      } catch (error) {
+        console.error(`❌ [Scheduler] Failed to publish post ${post._id}:`, error.message);
+        results.failed++;
+        results.errors.push({
+          postId: post._id,
+          title: post.title,
+          error: error.message,
+        });
+
+        // Mark post as failed
+        post.status = 'failed';
+        post.error = {
+          message: error.message,
+          code: 'SCHEDULER_ERROR',
+          timestamp: new Date(),
+        };
+        await post.save();
+      }
+    }
+
+    console.log('🎉 [Scheduler] Batch publish complete:', results);
+
+    res.json({
+      success: true,
+      message: 'Scheduled posts batch publish complete',
+      results,
+    });
+  } catch (error) {
+    console.error('❌ [Scheduler] Batch publish error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error in scheduled posts batch publish',
       error: error.message,
     });
   }

@@ -13,7 +13,8 @@ router.delete('/:id', protect, postController.deletePost);
 router.post('/:id/publish', protect, apiLimiter, postController.publishPost);
 router.post('/:id/sync-instagram-analytics', protect, postController.syncInstagramAnalytics);
 
-// Cron job endpoint for automatic analytics sync (secured by secret)
+// Cron job endpoints (secured by secret)
 router.post('/cron/sync-analytics', postController.autoSyncAllAnalytics);
+router.post('/cron/publish-scheduled', postController.autoPublishScheduledPosts);
 
 module.exports = router;
