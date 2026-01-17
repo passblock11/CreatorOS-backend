@@ -313,23 +313,11 @@ exports.publishPost = async (req, res) => {
       });
     }
 
-    // Check plan limits - calculate actual posts this month from database
+    // Check plan limits
     const limits = user.getPlanLimits();
     console.log('📊 Plan limits:', limits);
     
-    const startOfMonth = new Date();
-    startOfMonth.setDate(1);
-    startOfMonth.setHours(0, 0, 0, 0);
-    
-    const postsThisMonth = await Post.countDocuments({
-      user: req.user._id,
-      status: 'published',
-      publishedAt: { $gte: startOfMonth }
-    });
-    
-    console.log(`📊 Posts this month: ${postsThisMonth} / ${limits.postsPerMonth}`);
-    
-    if (limits.postsPerMonth !== -1 && postsThisMonth >= limits.postsPerMonth) {
+    if (limits.postsPerMonth !== -1 && user.usage.postsThisMonth >= limits.postsPerMonth) {
       console.log('❌ Monthly post limit reached');
       return res.status(403).json({
         success: false,
@@ -464,10 +452,12 @@ exports.publishPost = async (req, res) => {
     if (snapchatSuccess && instagramSuccess) {
       post.status = 'published';
       post.publishedAt = new Date();
+      user.usage.postsThisMonth += 1;
       console.log('✅ Post published successfully to all platforms');
     } else if (snapchatSuccess || instagramSuccess) {
       post.status = 'published';
       post.publishedAt = new Date();
+      user.usage.postsThisMonth += 1;
       console.log('⚠️  Post published to some platforms with errors');
     } else {
       post.status = 'failed';
@@ -480,6 +470,7 @@ exports.publishPost = async (req, res) => {
     }
 
     await post.save();
+    await user.save();
 
     console.log('========================================');
     console.log('📊 PUBLISH RESULTS:');
@@ -682,17 +673,6 @@ exports.getAnalytics = async (req, res) => {
     const scheduledPosts = await Post.countDocuments({ user: req.user._id, status: 'scheduled' });
     const draftPosts = await Post.countDocuments({ user: req.user._id, status: 'draft' });
 
-    // Calculate posts this month from actual database data (not from counter)
-    const startOfMonth = new Date();
-    startOfMonth.setDate(1);
-    startOfMonth.setHours(0, 0, 0, 0);
-    
-    const postsThisMonth = await Post.countDocuments({
-      user: req.user._id,
-      status: 'published',
-      publishedAt: { $gte: startOfMonth }
-    });
-
     const recentPosts = await Post.find({ user: req.user._id, status: 'published' })
       .sort({ publishedAt: -1 })
       .limit(10);
@@ -737,7 +717,7 @@ exports.getAnalytics = async (req, res) => {
         totalInstagramComments,
         totalInstagramSaves,
         totalInstagramEngagement,
-        postsThisMonth,
+        postsThisMonth: user.usage.postsThisMonth,
         planLimits: user.getPlanLimits(),
       },
     });

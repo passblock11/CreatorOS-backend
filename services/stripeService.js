@@ -222,31 +222,29 @@ class StripeService {
     }
 
     // Check if subscription is set to cancel at period end
-    if (subscription.cancel_at_period_end) {
-      console.log(`Subscription will be cancelled for user ${user._id} at period end`);
-      await User.findByIdAndUpdate(user._id, {
-        'subscription.plan': 'free',
-        'subscription.status': 'cancelled',
-        'subscription.currentPeriodEnd': new Date(subscription.current_period_end * 1000),
-      });
-      console.log(`User ${user._id} downgraded to free plan due to cancellation`);
-      return;
-    }
+    const isCancelling = subscription.cancel_at_period_end === true;
+    const isCancelled = subscription.status === 'canceled' || subscription.status === 'unpaid';
 
-    const priceId = subscription.items.data[0].price.id;
     let plan = 'free';
-    if (priceId === process.env.STRIPE_PRICE_ID_PRO) {
-      plan = 'pro';
-    } else if (priceId === process.env.STRIPE_PRICE_ID_BUSINESS) {
-      plan = 'business';
-    }
+    let status = 'cancelled';
 
-    let status = 'active';
-    if (subscription.status === 'past_due') {
+    // If subscription is active and NOT set to cancel, determine the plan
+    if (!isCancelling && !isCancelled && subscription.status === 'active') {
+      const priceId = subscription.items.data[0].price.id;
+      if (priceId === process.env.STRIPE_PRICE_ID_PRO) {
+        plan = 'pro';
+      } else if (priceId === process.env.STRIPE_PRICE_ID_BUSINESS) {
+        plan = 'business';
+      }
+      status = 'active';
+    } else if (subscription.status === 'past_due') {
+      // Keep current plan but mark as past_due
+      plan = user.subscription.plan;
       status = 'past_due';
-    } else if (subscription.status === 'canceled' || subscription.status === 'unpaid') {
-      status = 'cancelled';
+    } else {
+      // Cancelled, unpaid, or set to cancel - downgrade to free
       plan = 'free';
+      status = 'cancelled';
     }
 
     await User.findByIdAndUpdate(user._id, {
@@ -256,6 +254,9 @@ class StripeService {
     });
 
     console.log(`Subscription updated for user ${user._id}: ${plan} - ${status}`);
+    if (isCancelling) {
+      console.log(`⚠️ Subscription is set to cancel at period end: ${new Date(subscription.current_period_end * 1000).toISOString()}`);
+    }
   }
 
   async handleSubscriptionDeleted(subscription) {

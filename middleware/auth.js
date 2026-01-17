@@ -28,6 +28,22 @@ const protect = async (req, res, next) => {
         });
       }
 
+      // Auto-reset monthly usage counter if we're in a new month
+      const now = new Date();
+      const lastReset = req.user.usage.lastResetDate ? new Date(req.user.usage.lastResetDate) : null;
+      
+      const needsReset = !lastReset || 
+        now.getMonth() !== lastReset.getMonth() || 
+        now.getFullYear() !== lastReset.getFullYear();
+
+      if (needsReset) {
+        console.log(`🔄 [Usage Reset] Resetting monthly usage for user ${req.user._id}`);
+        req.user.usage.postsThisMonth = 0;
+        req.user.usage.lastResetDate = now;
+        await req.user.save();
+        console.log(`✅ [Usage Reset] Counter reset to 0`);
+      }
+
       next();
     } catch (error) {
       return res.status(401).json({

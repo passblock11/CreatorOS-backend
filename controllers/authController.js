@@ -189,3 +189,105 @@ exports.updateProfile = async (req, res) => {
     });
   }
 };
+
+exports.resetMonthlyUsage = async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id);
+    
+    console.log(`🔄 [Manual Reset] Resetting usage for user ${user._id}`);
+    console.log(`   Old counter: ${user.usage.postsThisMonth}`);
+    
+    user.usage.postsThisMonth = 0;
+    user.usage.lastResetDate = new Date();
+    await user.save();
+    
+    console.log(`✅ [Manual Reset] Counter reset to 0`);
+
+    res.json({
+      success: true,
+      message: 'Monthly usage reset successfully',
+      usage: user.usage,
+    });
+  } catch (error) {
+    console.error('Reset usage error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error resetting usage',
+      error: error.message,
+    });
+  }
+};
+
+exports.fixSubscription = async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id);
+    
+    console.log(`🔧 [Fix Subscription] Checking subscription for user ${user._id}`);
+    console.log(`   Current plan: ${user.subscription.plan}`);
+    console.log(`   Current status: ${user.subscription.status}`);
+    console.log(`   Stripe subscription ID: ${user.subscription.stripeSubscriptionId}`);
+    
+    // If user has no active Stripe subscription, downgrade to free
+    if (!user.subscription.stripeSubscriptionId || user.subscription.status === 'cancelled') {
+      console.log(`⚠️ No active Stripe subscription, downgrading to free`);
+      user.subscription.plan = 'free';
+      user.subscription.status = 'active';
+      await user.save();
+      
+      return res.json({
+        success: true,
+        message: 'Subscription fixed: downgraded to free plan',
+        subscription: user.subscription,
+      });
+    }
+    
+    // Otherwise, fetch from Stripe to verify
+    const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+    try {
+      const subscription = await stripe.subscriptions.retrieve(user.subscription.stripeSubscriptionId);
+      
+      console.log(`📊 Stripe subscription status: ${subscription.status}`);
+      console.log(`   Cancel at period end: ${subscription.cancel_at_period_end}`);
+      
+      if (subscription.status === 'canceled' || subscription.cancel_at_period_end) {
+        user.subscription.plan = 'free';
+        user.subscription.status = 'cancelled';
+        user.subscription.stripeSubscriptionId = null;
+        await user.save();
+        
+        return res.json({
+          success: true,
+          message: 'Subscription fixed: cancelled subscription detected, downgraded to free',
+          subscription: user.subscription,
+        });
+      }
+      
+      res.json({
+        success: true,
+        message: 'Subscription is valid and active',
+        subscription: user.subscription,
+      });
+    } catch (stripeError) {
+      console.log(`⚠️ Could not fetch Stripe subscription: ${stripeError.message}`);
+      console.log(`   Downgrading to free as a safety measure`);
+      
+      user.subscription.plan = 'free';
+      user.subscription.status = 'cancelled';
+      user.subscription.stripeSubscriptionId = null;
+      await user.save();
+      
+      res.json({
+        success: true,
+        message: 'Subscription fixed: invalid Stripe subscription, downgraded to free',
+        subscription: user.subscription,
+      });
+    }
+  } catch (error) {
+    console.error('Fix subscription error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fixing subscription',
+      error: error.message,
+    });
+  }
+};
