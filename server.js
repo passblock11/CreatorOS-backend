@@ -14,6 +14,7 @@ const stripeRoutes = require('./routes/stripe');
 const adminRoutes = require('./routes/admin');
 const uploadRoutes = require('./routes/upload');
 const aiRoutes = require('./routes/ai');
+const mediaLibraryRoutes = require('./routes/mediaLibrary');
 
 const app = express();
 
@@ -65,6 +66,7 @@ app.use('/api/stripe', stripeRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/upload', uploadRoutes);
 app.use('/api/ai', aiRoutes);
+app.use('/api/media-library', mediaLibraryRoutes);
 
 app.use((req, res) => {
   res.status(404).json({

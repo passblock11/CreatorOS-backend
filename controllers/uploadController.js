@@ -1,4 +1,5 @@
 const { uploadToCloudinary, deleteFromCloudinary } = require('../services/uploadService');
+const MediaLibrary = require('../models/MediaLibrary');
 
 /**
  * Upload media file (image or video)
@@ -36,6 +37,31 @@ exports.uploadMedia = async (req, res) => {
 
     console.log('✅ [Upload] Upload successful');
 
+    // Save to Media Library
+    let mediaLibraryItem = null;
+    try {
+      const tags = req.body.tags ? JSON.parse(req.body.tags) : [];
+      mediaLibraryItem = await MediaLibrary.create({
+        user: req.user._id,
+        url: result.secure_url,
+        publicId: result.public_id,
+        type: resourceType,
+        filename: file.originalname,
+        size: result.bytes,
+        width: result.width,
+        height: result.height,
+        duration: result.duration,
+        format: result.format,
+        category: req.body.category || 'uncategorized',
+        tags,
+        description: req.body.description || '',
+      });
+      console.log(`✅ [MediaLibrary] Saved to library: ${mediaLibraryItem._id}`);
+    } catch (libraryError) {
+      console.error('⚠️  [MediaLibrary] Failed to save:', libraryError.message);
+      // Don't fail the upload if library save fails
+    }
+
     res.json({
       success: true,
       message: 'File uploaded successfully',
@@ -49,6 +75,7 @@ exports.uploadMedia = async (req, res) => {
         type: resourceType,
         resourceType: result.resource_type,
         createdAt: result.created_at,
+        mediaLibraryId: mediaLibraryItem?._id,
       },
     });
   } catch (error) {
