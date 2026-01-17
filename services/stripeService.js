@@ -221,6 +221,18 @@ class StripeService {
       return;
     }
 
+    // Check if subscription is set to cancel at period end
+    if (subscription.cancel_at_period_end) {
+      console.log(`Subscription will be cancelled for user ${user._id} at period end`);
+      await User.findByIdAndUpdate(user._id, {
+        'subscription.plan': 'free',
+        'subscription.status': 'cancelled',
+        'subscription.currentPeriodEnd': new Date(subscription.current_period_end * 1000),
+      });
+      console.log(`User ${user._id} downgraded to free plan due to cancellation`);
+      return;
+    }
+
     const priceId = subscription.items.data[0].price.id;
     let plan = 'free';
     if (priceId === process.env.STRIPE_PRICE_ID_PRO) {
@@ -234,6 +246,7 @@ class StripeService {
       status = 'past_due';
     } else if (subscription.status === 'canceled' || subscription.status === 'unpaid') {
       status = 'cancelled';
+      plan = 'free';
     }
 
     await User.findByIdAndUpdate(user._id, {
