@@ -41,6 +41,13 @@ exports.uploadMedia = async (req, res) => {
     let mediaLibraryItem = null;
     try {
       const tags = req.body.tags ? JSON.parse(req.body.tags) : [];
+      
+      console.log('💾 [MediaLibrary] Attempting to save to library...', {
+        user: req.user._id,
+        filename: file.originalname,
+        type: resourceType,
+      });
+      
       mediaLibraryItem = await MediaLibrary.create({
         user: req.user._id,
         url: result.secure_url,
@@ -56,9 +63,12 @@ exports.uploadMedia = async (req, res) => {
         tags,
         description: req.body.description || '',
       });
-      console.log(`✅ [MediaLibrary] Saved to library: ${mediaLibraryItem._id}`);
+      console.log(`✅ [MediaLibrary] Saved to library successfully: ${mediaLibraryItem._id}`);
     } catch (libraryError) {
-      console.error('⚠️  [MediaLibrary] Failed to save:', libraryError.message);
+      console.error('❌ [MediaLibrary] FAILED TO SAVE:');
+      console.error('Error message:', libraryError.message);
+      console.error('Error stack:', libraryError.stack);
+      console.error('Full error:', libraryError);
       // Don't fail the upload if library save fails
     }
 
