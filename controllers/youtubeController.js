@@ -54,8 +54,19 @@ exports.handleCallback = async (req, res) => {
     const channelInfo = await youtubeService.getChannelInfo(tokens.access_token);
 
     // Calculate token expiry
-    const expiresAt = new Date();
-    expiresAt.setSeconds(expiresAt.getSeconds() + (tokens.expiry_date ? tokens.expires_in : 3600));
+    let expiresAt;
+    if (tokens.expiry_date) {
+      // expiry_date is absolute timestamp in milliseconds
+      expiresAt = new Date(tokens.expiry_date);
+    } else if (tokens.expires_in) {
+      // expires_in is relative seconds from now
+      expiresAt = new Date();
+      expiresAt.setSeconds(expiresAt.getSeconds() + tokens.expires_in);
+    } else {
+      // Default to 1 hour from now
+      expiresAt = new Date();
+      expiresAt.setSeconds(expiresAt.getSeconds() + 3600);
+    }
 
     // Update user with YouTube credentials
     const user = await User.findById(userId);
