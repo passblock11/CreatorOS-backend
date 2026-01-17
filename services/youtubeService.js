@@ -71,7 +71,7 @@ exports.getChannelInfo = async (accessToken) => {
     });
 
     const response = await youtube.channels.list({
-      part: 'snippet,contentDetails,statistics',
+      part: 'snippet', // Only get essential info to save quota
       mine: true,
     });
 
@@ -85,9 +85,7 @@ exports.getChannelInfo = async (accessToken) => {
       channelTitle: channel.snippet.title,
       description: channel.snippet.description,
       thumbnailUrl: channel.snippet.thumbnails.default.url,
-      subscriberCount: channel.statistics.subscriberCount,
-      videoCount: channel.statistics.videoCount,
-      viewCount: channel.statistics.viewCount,
+      // Statistics removed to save quota - not needed for connection
     };
   } catch (error) {
     console.error('Error getting channel info:', error);
